@@ -46,6 +46,8 @@ def chunk_documents(pages: list[dict], chunk_size: int = 600, chunk_overlap: int
             }
             if file_tags.get("department"):
                 metadata["department"] = file_tags["department"]
+            if file_tags.get("category"):
+                metadata["category"] = file_tags["category"]
             if file_tags.get("year"):
                 metadata["year"] = file_tags["year"]
             if file_tags.get("course"):

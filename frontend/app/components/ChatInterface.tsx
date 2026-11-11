@@ -9,14 +9,14 @@ interface Message {
     traces?: string[];
 }
 
-export default function ChatInterface({ 
-    currentSessionId, 
+export default function ChatInterface({
+    currentSessionId,
     onNewSession,
     onHistoryLoadingChange
-}: { 
-    currentSessionId: string | null, 
+}: {
+    currentSessionId: string | null,
     onNewSession: (id: string | null) => void,
-    onHistoryLoadingChange?: (loading: boolean) => void 
+    onHistoryLoadingChange?: (loading: boolean) => void
 }) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
@@ -30,10 +30,10 @@ export default function ChatInterface({
 
     const scrollToBottom = (instant = false) => {
         if (!scrollContainerRef.current) return;
-        
+
         const container = scrollContainerRef.current;
         const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-        
+
         if (isNearBottom || instant || isStreaming.current) {
             messagesEndRef.current?.scrollIntoView({ behavior: instant ? "auto" : "smooth" });
         }
@@ -196,7 +196,7 @@ export default function ChatInterface({
     return (
         <div className="flex flex-col w-full h-full bg-background text-foreground transition-shadow relative">
             <div className="absolute inset-0 bg-cyber-grid opacity-10 pointer-events-none" />
-            <div 
+            <div
                 ref={scrollContainerRef}
                 className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 scroll-smooth custom-scrollbar relative z-10"
             >
@@ -216,8 +216,26 @@ export default function ChatInterface({
                             </svg>
                         </div>
                         <div className="space-y-2">
-                            <h3 className="text-3xl font-bold text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">Campus Assistant</h3>
-                            <p className="text-muted-foreground text-sm tracking-wide">Secure link established. Query campus policies, course schedules, or system databases.</p>
+                            <h3 className="text-3xl font-bold text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">AIDA</h3>
+                            <p className="text-sm font-semibold text-primary/90">AI-Driven Department Agent • AIML Department</p>
+                            <p className="text-muted-foreground text-sm tracking-wide">AIDA is an AI-powered department assistant that helps students, faculty, and administrators access department-specific academic and administrative information.</p>
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-2 pt-2">
+                            {[
+                                "What classes does AIML-A have on Monday?",
+                                "What are the upcoming deadlines?",
+                                "Tell me about AIML lab facilities",
+                                "What are the latest department notices?"
+                            ].map((suggestion, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => setInput(suggestion)}
+                                    className="px-3 py-1.5 rounded-full text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors cursor-pointer text-left"
+                                >
+                                    {suggestion}
+                                </button>
+                            ))}
                         </div>
                     </div>
                 )}

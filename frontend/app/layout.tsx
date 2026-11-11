@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Campus Assistant | Enterprise",
-  description: "Advanced AI-powered university assistant",
+  title: "AIDA – AI-Driven Department Agent | AIML Department",
+  description:
+    "AIDA is an AI-powered department assistant that helps students, faculty, and administrators access department-specific academic and administrative information.",
 };
 
 export default function RootLayout({

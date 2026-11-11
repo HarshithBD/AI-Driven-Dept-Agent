@@ -16,7 +16,7 @@ sql_query = """
 -- 1. Create the user_roles table
 CREATE TABLE IF NOT EXISTS public.user_roles (
   id uuid REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-  role text NOT NULL CHECK (role IN ('student', 'admin'))
+  role text NOT NULL CHECK (role IN ('student', 'faculty', 'admin'))
 );
 
 -- Enable Row Level Security (Secure the table)

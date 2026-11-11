@@ -43,7 +43,7 @@ def _read_csv(filepath: str) -> list[dict]:
 
 
 def _group_csv_path(student_group: str) -> str:
-    """Return path for a group-specific timetable CSV (e.g. timetable_CS-A.csv)."""
+    """Return path for a group-specific timetable CSV (e.g. timetable_AIML-A.csv)."""
     safe_name = student_group.strip().upper().replace(" ", "-")
     return os.path.join(TIMETABLE_DIR, f"timetable_{safe_name}.csv")
 
@@ -55,14 +55,14 @@ def get_timetable(day: str, student_group: Optional[str] = None) -> list[dict]:
     Get class schedule for a given day.
 
     When student_group is provided the server first looks for a group-specific
-    file (timetable_CS-A.csv). If that exists, it returns all rows in that file
+    file (timetable_AIML-A.csv). If that exists, it returns all rows in that file
     matching the day (no further group column filtering needed).
     If the group-specific file does not exist it falls back to the shared
     timetable.csv and filters by the student_group column.
 
     Args:
         day: Day of the week (e.g., 'Monday', 'Tuesday').
-        student_group: Optional student group filter (e.g., 'CS-A', 'CS-B').
+        student_group: Optional student group filter (e.g., 'AIML-A', 'AIML-B').
 
     Returns:
         List of classes with time, course_id, course_name, faculty, room, student_group.
@@ -105,7 +105,7 @@ def get_deadlines(course_id: Optional[str] = None) -> list[dict]:
     Get upcoming deadlines, optionally filtered by course.
 
     Args:
-        course_id: Optional course ID filter (e.g., 'CS401', 'CS402').
+        course_id: Optional course ID filter (e.g., 'AI401', 'AI402').
 
     Returns:
         List of deadlines with course_id, title, due_date, description.

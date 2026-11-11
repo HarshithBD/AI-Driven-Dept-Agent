@@ -9,7 +9,9 @@ interface ChatSession {
 }
 
 export default function Sidebar({
-    isAdmin,
+    role = "student",
+    isAdmin = false,
+    isFaculty = false,
     onSignOut,
     isCollapsed,
     onToggleCollapse,
@@ -18,7 +20,9 @@ export default function Sidebar({
     onSelectSession,
     onNewChat
 }: {
-    isAdmin: boolean;
+    role?: string;
+    isAdmin?: boolean;
+    isFaculty?: boolean;
     onSignOut: () => void;
     isCollapsed: boolean;
     onToggleCollapse: () => void;
@@ -118,7 +122,8 @@ export default function Sidebar({
                             </svg>
                         </div>
                         <div className="overflow-hidden">
-                            <h1 className="text-sm font-bold text-foreground tracking-wide leading-none truncate whitespace-nowrap">Campus Assistant</h1>
+                            <h1 className="text-sm font-bold text-foreground tracking-wide leading-none truncate whitespace-nowrap">AIDA</h1>
+                            <p className="text-[10px] text-muted-foreground truncate mt-0.5">AIML Dept Agent</p>
                         </div>
                     </div>
                 )}
@@ -231,15 +236,54 @@ export default function Sidebar({
                 </div>
             </div>
 
-            {/* Bottom controls */}
-            <div className={`p-3 border-t border-white/5 flex flex-col gap-2 ${isCollapsed ? 'items-center' : ''}`}>
+            {/* Bottom controls & Portal Links */}
+            <div className={`p-3 border-t border-white/5 flex flex-col gap-1.5 ${isCollapsed ? 'items-center' : ''}`}>
+                {/* Department Events */}
+                <button
+                    onClick={() => router.push("/events")}
+                    title="Department Events"
+                    className={`flex items-center text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors ${isCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 w-full'}`}
+                >
+                    <svg className="w-4 h-4 shrink-0 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    {!isCollapsed && <span className="truncate whitespace-nowrap">Events & Talks</span>}
+                </button>
+
+                {/* Student Portal Navigation */}
+                <button
+                    onClick={() => router.push("/student")}
+                    title="Student Portal"
+                    className={`flex items-center text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors ${isCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 w-full'}`}
+                >
+                    <svg className="w-4 h-4 shrink-0 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5" />
+                    </svg>
+                    {!isCollapsed && <span className="truncate whitespace-nowrap">Student Portal</span>}
+                </button>
+
+                {/* Faculty Portal Navigation */}
+                {(isFaculty || isAdmin) && (
+                    <button
+                        onClick={() => router.push("/faculty")}
+                        title="Faculty Portal"
+                        className={`flex items-center text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors ${isCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 w-full'}`}
+                    >
+                        <svg className="w-4 h-4 shrink-0 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                        </svg>
+                        {!isCollapsed && <span className="truncate whitespace-nowrap">Faculty Portal</span>}
+                    </button>
+                )}
+
+                {/* Admin Portal Navigation */}
                 {isAdmin && (
                     <button
                         onClick={() => router.push("/admin")}
                         title="Admin Dashboard"
                         className={`flex items-center text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-md transition-colors ${isCollapsed ? 'p-2 justify-center' : 'gap-2 px-3 py-2 w-full'}`}
                     >
-                        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-4 h-4 shrink-0 text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>

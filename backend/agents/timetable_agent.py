@@ -5,6 +5,8 @@ Uses Gemini to extract parameters (day, group, course_id) from natural language,
 then calls the Timetable MCP Server via mcp_client.
 """
 
+from __future__ import annotations
+
 import os
 import json
 from dotenv import load_dotenv
@@ -15,6 +17,13 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from agents.state import GraphState
 import mcp_client
+from department_config import (
+    STUDENT_SECTIONS,
+    DEPARTMENT_COURSES,
+    COURSE_ALIAS_MAP,
+    SECTIONS_TEXT,
+    DEPARTMENT_CODE,
+)
 
 llm = ChatGoogleGenerativeAI(
     model=os.getenv("LLM_MODEL", "gemini-3.8-flash"),
@@ -24,54 +33,42 @@ llm = ChatGoogleGenerativeAI(
 
 # ==================== TIMETABLE PARAMETER EXTRACTION ====================
 
-TIMETABLE_EXTRACT_PROMPT = """Extract the following from the user's question about a class timetable.
+_sections_joined = " or ".join(STUDENT_SECTIONS)
+_course_mappings_str = "\n".join([
+    f"  - {c['name']} / {' / '.join(c['aliases'])} → {c['id']}"
+    for c in DEPARTMENT_COURSES
+])
+
+TIMETABLE_EXTRACT_PROMPT = f"""Extract the following from the user's question about a class timetable in the {DEPARTMENT_CODE} Department.
 Respond with ONLY a JSON object, no other text.
 
-{
+{{
   "day": "<day of week or null>",
-  "student_group": "<CS-A or CS-B or null>"
-}
+  "student_group": "<{_sections_joined} or null>"
+}}
 
 Rules:
 - day must be one of: Monday, Tuesday, Wednesday, Thursday, Friday, or null if not specified.
-- student_group must be CS-A or CS-B, or null if not specified.
+- student_group must be one of: {', '.join(STUDENT_SECTIONS)}, or null if not specified.
 - If the user says "today", resolve it to the actual day based on the conversation or leave null.
-- IMPORTANT: If the user's message or ANY previous message in the conversation history mentions CS-A, cs-a, CSA, CS-B, cs-b, CSB, group A, group B, Section A, or Section B, you MUST extract that as the student_group. Never return null for student_group if it appears ANYWHERE in the history.
-- If the user's message is a short follow-up like just "cs-a" or "monday" with no other context, use the conversation history to fill in the other missing field.
-- If the user asks a follow up question like "What about Tuesday?", and previously asked about "CS-A", then return {"day": "Tuesday", "student_group": "CS-A"}.
-
-Examples:
-- "What classes does CS-A have on Monday?" → {"day": "Monday", "student_group": "CS-A"}
-- "What is my timetable for Wednesday?" → {"day": "Wednesday", "student_group": null}
-- "Show me the Friday schedule" → {"day": "Friday", "student_group": null}
-- "What classes do I have?" → {"day": null, "student_group": null}
-- "cs-a" (with prior history asking about Monday) → {"day": "Monday", "student_group": "CS-A"}
+- IMPORTANT: If the user's message or ANY previous message in the conversation history mentions {', '.join(STUDENT_SECTIONS)} or Section A/B, you MUST extract that as the student_group.
+- If the user asks a follow-up question, use the conversation history to fill in the missing fields.
 """
 
 # ==================== DEADLINE PARAMETER EXTRACTION ====================
 
-DEADLINE_EXTRACT_PROMPT = """Extract the course ID from the user's question about deadlines.
+DEADLINE_EXTRACT_PROMPT = f"""Extract the course ID from the user's question about deadlines in the {DEPARTMENT_CODE} Department.
 Respond with ONLY a JSON object, no other text.
 
-{
-  "course_id": "<course code like CS401 or null>"
-}
+{{
+  "course_id": "<course code like {DEPARTMENT_COURSES[0]['id']} or null>"
+}}
 
 Rules:
-- course_id should be in format like CS401, CS402, CS403, CS404, CS405 etc.
+- course_id should be in format like {DEPARTMENT_COURSES[0]['id']}, etc.
 - If the user mentions a course name, map it to the ID:
-  - Machine Learning / ML → CS401
-  - Computer Networks → CS402
-  - Database Systems / DBMS → CS403
-  - Software Engineering / SE → CS404
-  - Operating Systems / OS → CS405
+{_course_mappings_str}
 - If no specific course is mentioned, use null (returns all deadlines).
-
-Examples:
-- "When is the CS401 assignment due?" → {"course_id": "CS401"}
-- "What are the ML deadlines?" → {"course_id": "CS401"}
-- "Show me all upcoming deadlines" → {"course_id": null}
-- "When is the Database Systems exam?" → {"course_id": "CS403"}
 """
 
 
@@ -190,7 +187,7 @@ async def timetable_node(state: GraphState) -> dict:
                     "tool": "clarification_needed",
                     "content": (
                         f"The user asked about their lectures{clarification_day} but did not specify which class section they are in. "
-                        "Ask the user: 'Which section are you in — CS-A or CS-B?' "
+                        f"Ask the user: 'Which section are you in — {SECTIONS_TEXT}?' "
                         "Do NOT attempt to answer the timetable question until the section is confirmed."
                     ),
                 })

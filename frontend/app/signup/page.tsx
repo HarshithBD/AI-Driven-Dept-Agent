@@ -10,7 +10,7 @@ export default function SignupPage() {
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [role, setRole] = useState<"student" | "admin">("student");
+    const [role, setRole] = useState<"student" | "faculty" | "admin">("student");
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
 
@@ -71,8 +71,8 @@ export default function SignupPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                         </svg>
                     </div>
-                    <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">Create Account</h2>
-                    <p className="mt-2 text-sm text-muted-foreground tracking-wide">Join Campus Assistant to get started.</p>
+                    <h2 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">Join AIDA</h2>
+                    <p className="mt-2 text-sm text-muted-foreground tracking-wide">Register for AIDA – AI-Driven Department Agent (AIML)</p>
                 </div>
 
                 {error && (
@@ -92,7 +92,7 @@ export default function SignupPage() {
                         <button
                             type="button"
                             onClick={() => setRole("student")}
-                            className={`flex-1 py-2.5 px-4 text-sm font-bold rounded-xl transition-all duration-300 ${role === "student"
+                            className={`flex-1 py-2 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all duration-300 ${role === "student"
                                 ? "bg-primary/20 text-primary shadow-[0_0_10px_rgba(0,229,255,0.2)] border border-primary/30"
                                 : "text-muted-foreground hover:text-foreground"
                                 }`}
@@ -101,9 +101,19 @@ export default function SignupPage() {
                         </button>
                         <button
                             type="button"
+                            onClick={() => setRole("faculty")}
+                            className={`flex-1 py-2 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all duration-300 ${role === "faculty"
+                                ? "bg-accent/20 text-accent shadow-[0_0_10px_rgba(0,255,65,0.2)] border border-accent/30"
+                                : "text-muted-foreground hover:text-foreground"
+                                }`}
+                        >
+                            Faculty
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setRole("admin")}
-                            className={`flex-1 py-2.5 px-4 text-sm font-bold rounded-xl transition-all duration-300 ${role === "admin"
-                                ? "bg-primary/20 text-primary shadow-[0_0_10px_rgba(0,229,255,0.2)] border border-primary/30"
+                            className={`flex-1 py-2 px-3 text-xs sm:text-sm font-bold rounded-xl transition-all duration-300 ${role === "admin"
+                                ? "bg-secondary/20 text-secondary shadow-[0_0_10px_rgba(157,0,255,0.2)] border border-secondary/30"
                                 : "text-muted-foreground hover:text-foreground"
                                 }`}
                         >

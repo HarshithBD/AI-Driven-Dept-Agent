@@ -12,6 +12,7 @@ load_dotenv()
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from agents.state import GraphState
+from department_config import SECTIONS_DISPLAY, DEPARTMENT_CODE, DEPARTMENT_NAME
 
 llm = ChatGoogleGenerativeAI(
     model=os.getenv("LLM_MODEL", "gemini-3.8-flash"),
@@ -19,8 +20,9 @@ llm = ChatGoogleGenerativeAI(
     max_retries=3,
 )
 
-SYSTEM_PROMPT = """You are a helpful campus assistant for Greenfield University.
-Answer student questions based on the context provided below.
+SYSTEM_PROMPT = """You are AIDA – AI-Driven Department Agent, an intelligent AI-powered assistant designed specifically for the Artificial Intelligence and Machine Learning (AIML) Department.
+AIDA is an AI-powered department assistant that helps students, faculty, and administrators access department-specific academic and administrative information.
+Answer questions based on the context provided below.
 
 **Formatting Rules:**
 - Use **Markdown** for all answers.
@@ -29,14 +31,20 @@ Answer student questions based on the context provided below.
 - Use `**bold**` for key terms.
 - For document-based answers, include citations with the document name and page number.
 - For schedule/deadline answers, format the data clearly into tables or lists.
+- For faculty inquiries, clearly present the faculty member's name, designation, department, institutional email, office/cabin location, specialization, subjects handled, and office hours/availability.
+- For department events, workshops, seminars, and hackathons, clearly present the event title, scheduled date and time, venue/location, organizer, and description. Highlight venues, locations, and timings prominently.
 - For study plans, organize by day with clear time blocks and priorities.
 - Be concise but thorough.
 
 **Important:**
+- PREFER RETRIEVED DEPARTMENT INFORMATION: When answering questions about the AIML syllabus, academic policies, attendance rules, grading schemes, project guidelines, or lab manuals, base your answers strictly on the provided context.
+- DO NOT INVENT DEPARTMENT INFORMATION: Never fabricate, assume, or guess university policies, passing thresholds, attendance percentages, or course requirements.
+- IF INFORMATION IS UNAVAILABLE: If the context indicates that the requested information is not found in the uploaded documents, clearly state that the information is unavailable in the official department documentation rather than improvising.
 - If the context indicates this is a general conversation query (e.g., greetings, thanks), respond politely and naturally without mentioning documents.
+- If the context indicates a faculty member or information was not found in the department database, clearly let the student know rather than inventing information.
 - If the context contains error messages, acknowledge the issue politely and let the student know you're having trouble fetching that data.
 - Use the context to answer the question. If the context contains related or partially relevant information, use it to construct the best possible answer. Combine information from multiple context chunks if needed.
-- Only say "I don't have this information in the uploaded documents." if the context is completely unrelated to the question and contains no useful information at all.
+- HUMAN APPROVAL REQUIREMENT FOR STUDENT REQUESTS: You may explain how to submit requests, explain department requirements, or assist students in drafting clear request descriptions (e.g. for leave, bonafide certificates, project guide allocation, lab compute access, or course exemptions). However, you MUST NEVER approve, reject, or grant requests yourself. You must clearly state that all formal approvals or rejections are strictly made by authorized human faculty members or department administrators through the department portal.
 - Never make up factual university information that isn't supported by the context.
 
 Context:
@@ -66,7 +74,7 @@ async def response_writer_node(state: GraphState) -> dict:
     # hallucinating "I don't have that information" instead of asking.
     for item in context_items:
         if isinstance(item, dict) and item.get("tool") == "clarification_needed":
-            return {"response": "Which section are you in — **CS-A** or **CS-B**? Please let me know and I'll pull up your timetable right away!"}
+            return {"response": f"Which section are you in — {SECTIONS_DISPLAY}? Please let me know and I'll pull up your timetable right away!"}
 
     # Build context string from all gathered data
     context_parts = []

@@ -8,6 +8,7 @@ and announcements relevant to the user's query.
 import json
 from agents.state import GraphState
 from mcp_client import get_latest_notices
+from department_config import DEPARTMENT_CODE
 
 
 async def notices_node(state: GraphState) -> dict:
@@ -24,7 +25,9 @@ async def notices_node(state: GraphState) -> dict:
     # Basic department extraction (simplified for demo)
     dept_filter = None
     query_lower = query.lower()
-    if "cs" in query_lower:
+    if DEPARTMENT_CODE.lower() in query_lower or "aiml" in query_lower or "ai" in query_lower:
+        dept_filter = DEPARTMENT_CODE
+    elif "cs" in query_lower:
         dept_filter = "CS"
     elif "it" in query_lower:
         dept_filter = "IT"

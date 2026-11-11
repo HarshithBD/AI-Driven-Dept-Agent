@@ -9,7 +9,9 @@ import { supabase } from "../lib/supabase";
 
 export default function Home() {
   const router = useRouter();
+  const [role, setRole] = useState<string>("student");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isFaculty, setIsFaculty] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
 
   // Mobile sidebar states
@@ -43,7 +45,9 @@ export default function Home() {
         const res = await apiFetch("/me");
         if (res.ok) {
           const data = await res.json();
-          setIsAdmin(data.is_admin);
+          setRole(data.role || "student");
+          setIsAdmin(Boolean(data.is_admin));
+          setIsFaculty(Boolean(data.is_faculty));
         }
       } catch (err) {
         console.error("Failed to fetch user roles", err);
@@ -87,8 +91,8 @@ export default function Home() {
           <div className="absolute inset-0 border-4 border-primary rounded-full border-t-transparent animate-spin"></div>
         </div>
         <div className="space-y-2 text-center">
-          <h2 className="text-xl font-bold text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">Campus Assistant</h2>
-          <p className="text-sm text-primary animate-pulse tracking-wide neon-text-cyan">Securing session link...</p>
+          <h2 className="text-xl font-bold text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">AIDA</h2>
+          <p className="text-sm text-primary animate-pulse tracking-wide neon-text-cyan">AI-Driven Department Agent • Securing session link...</p>
         </div>
       </div>
     );
@@ -107,7 +111,9 @@ export default function Home() {
       {/* Sidebar - Mobile fixed, Desktop static shrink-0 */}
       <div className={`fixed inset-y-0 left-0 z-30 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <Sidebar
+          role={role}
           isAdmin={isAdmin}
+          isFaculty={isFaculty}
           onSignOut={handleSignOut}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -130,7 +136,7 @@ export default function Home() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <span className="ml-2 font-bold text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">Campus Assistant</span>
+          <span className="ml-2 font-bold text-transparent bg-clip-text bg-linear-to-r from-primary to-secondary neon-text-cyan">AIDA – AIML Department</span>
         </div>
 
         <div className="flex-1 overflow-hidden relative">

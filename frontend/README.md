@@ -1,6 +1,7 @@
-# Campus Assistant — Frontend
+# AIDA – AI-Driven Department Agent — Frontend
 
-A premium enterprise-grade Next.js application with a dark-mode neon design system.
+A premium enterprise-grade Next.js application for the AIML Department with a dark-mode neon design system.
+AIDA is an AI-powered department assistant that helps students, faculty, and administrators access department-specific academic and administrative information.
 
 ## Tech Stack
 

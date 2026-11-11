@@ -1,5 +1,5 @@
 /**
- * api-client.ts — Centralized fetch wrapper for the Campus Assistant.
+ * api-client.ts — Centralized fetch wrapper for AIDA – AI-Driven Department Agent.
  * Handles automatic token injection and 401 Unauthorized (Expired) redirection.
  */
 

@@ -1,23 +1,37 @@
 [
     {
         "id": "1",
-        "title": "Hackathon 2026 Registration Open",
-        "content": "The annual campus hackathon registration is now open for all departments. Prize pool of $5000!",
-        "department": "General",
+        "title": "AIML Annual AI Hackathon 2026 Registration Open",
+        "content": "Registration is open for the AIML Department Annual Hackathon: Generative AI and Autonomous Systems. Inter-department teams permitted. Prize pool of $5000 and GPU compute credits provided.",
+        "department": "AIML",
         "date": "2026-03-20"
     },
     {
         "id": "2",
-        "title": "CS Semester Exams Schedule",
-        "content": "Final exams for the CS department will begin on April 15th. Check the portal for details.",
-        "department": "CS",
+        "title": "AIML Semester Exams & Lab Assessment Schedule",
+        "content": "Mid-semester theory examinations and laboratory practical evaluations for AIML batches (AIML-A and AIML-B) will commence on April 18th. Detailed seating plans posted on notice board.",
+        "department": "AIML",
         "date": "2026-03-22"
     },
     {
         "id": "3",
-        "title": "Hostel Maintenance Work",
-        "content": "Block A will have no water supply from 10 AM to 4 PM on March 25th.",
+        "title": "High Performance AI Lab Server Maintenance",
+        "content": "GPU cluster in Lab 401 (AIML Block) will undergo scheduled hypervisor and driver upgrades on Saturday from 10 AM to 4 PM. Save training checkpoints before maintenance window.",
+        "department": "AIML",
+        "date": "2026-03-24"
+    },
+    {
+        "id": "4",
+        "title": "Guest Lecture on Multimodal Foundation Models",
+        "content": "Distinguished Industry Speaker session on 'Scaling Multimodal Vision-Language Models in Production' on Wednesday at 2:30 PM in Seminar Hall 2.",
+        "department": "AIML",
+        "date": "2026-03-26"
+    },
+    {
+        "id": "5",
+        "title": "Hostel & Campus Facilities Maintenance",
+        "content": "Block A and Student Center will undergo water pipeline maintenance from 10 AM to 3 PM on March 28th.",
         "department": "General",
-        "date": "2026-03-23"
+        "date": "2026-03-27"
     }
 ]

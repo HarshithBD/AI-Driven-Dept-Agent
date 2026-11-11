@@ -1,6 +1,13 @@
 # ==================== LOAD ENV ====================
+import os
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+
+_env_path = Path(__file__).resolve().parent / ".env"
+if _env_path.exists():
+    load_dotenv(dotenv_path=_env_path)
+else:
+    load_dotenv()
 
 # ==================== IMPORTS ====================
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
@@ -31,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 
 # ==================== APP ====================
-app = FastAPI(title="Campus Assistant API", lifespan=lifespan)
+app = FastAPI(title="AIDA – AI-Driven Department Agent API", lifespan=lifespan)
 
 # ==================== CORS ====================
 app.add_middleware(
@@ -43,7 +50,9 @@ app.add_middleware(
 )
 
 # ==================== SUPABASE CONFIG ====================
-SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+if SUPABASE_URL.endswith("/rest/v1"):
+    SUPABASE_URL = SUPABASE_URL[:-len("/rest/v1")].rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
@@ -74,6 +83,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         user_data = response.json()
         
         # Verify role
+        user_role = "student"
         try:
             role_resp = requests.get(
                 f"{SUPABASE_URL}/rest/v1/user_roles?id=eq.{user_data['id']}&select=role",
@@ -83,15 +93,21 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
                 },
                 timeout=5
             )
-            is_admin = False
             if role_resp.status_code == 200:
                 roles = role_resp.json()
-                if roles and len(roles) > 0 and roles[0].get("role") == "admin":
-                    is_admin = True
-            user_data["is_admin"] = is_admin
+                if roles and len(roles) > 0 and roles[0].get("role"):
+                    user_role = roles[0].get("role")
         except Exception as e:
             print(f"Error fetching role: {e}")
-            user_data["is_admin"] = False
+            user_role = "student"
+
+        # Fallback to user_metadata if role was not found in user_roles table
+        if user_role == "student" and user_data.get("user_metadata", {}).get("role"):
+            user_role = user_data["user_metadata"]["role"]
+
+        user_data["role"] = user_role
+        user_data["is_admin"] = (user_role == "admin")
+        user_data["is_faculty"] = (user_role in ("faculty", "admin"))
 
         return user_data
     except requests.exceptions.RequestException as e:
@@ -106,10 +122,26 @@ def require_admin(user=Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return user
 
-# ==================== HEALTH ====================
+def require_faculty_or_admin(user=Depends(get_current_user)):
+    if not (user.get("is_admin") or user.get("is_faculty")):
+        raise HTTPException(status_code=403, detail="Faculty or Admin privileges required")
+    return user
+
+# ==================== HEALTH & CONFIG ====================
+from department_config import get_department_metadata, DEPARTMENT_CODE, DEPARTMENT_NAME
+
 @app.get("/")
 def root():
-    return {"message": "Campus Assistant API running"}
+    return {
+        "message": "AIDA – AI-Driven Department Agent API running",
+        "department": DEPARTMENT_CODE,
+        "department_name": DEPARTMENT_NAME
+    }
+
+@app.get("/department/config")
+def get_config():
+    """Return department metadata, subjects, sections, and laboratories."""
+    return get_department_metadata()
 
 # ==================== CURRENT USER ====================
 @app.get("/me")
@@ -117,7 +149,9 @@ def me(user=Depends(get_current_user)):
     return {
         "id": user["id"],
         "email": user["email"],
-        "is_admin": user.get("is_admin", False)
+        "role": user.get("role", "student"),
+        "is_admin": user.get("is_admin", False),
+        "is_faculty": user.get("is_faculty", False)
     }
 
 # ==================== ASSIGN ROLE ====================
@@ -127,8 +161,8 @@ class RoleAssignRequest(BaseModel):
 
 @app.post("/assign-role")
 def assign_role(request: RoleAssignRequest):
-    if request.role not in ["student", "admin"]:
-        raise HTTPException(status_code=400, detail="Invalid role")
+    if request.role not in ["student", "faculty", "admin"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'student', 'faculty', or 'admin'.")
         
     try:
         response = requests.post(
@@ -161,14 +195,15 @@ def _save_tags(tags: dict) -> None:
     with open(DOC_TAGS_PATH, "w") as f:
         json.dump(tags, f, indent=2)
 
-# ==================== FILE UPLOAD ====================
+# ==================== FILE UPLOAD (FACULTY / ADMIN) ====================
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
-    department: str = Form(default=""),
+    department: str = Form(default=DEPARTMENT_CODE),
+    category: str = Form(default="Academic Resources"),
     year: str = Form(default=""),
     course: str = Form(default=""),
-    user=Depends(get_current_user),
+    user=Depends(require_faculty_or_admin),
 ):
     os.makedirs("data/docs", exist_ok=True)
     path = f"data/docs/{file.filename}"
@@ -179,31 +214,39 @@ async def upload_file(
     # Save tags for this file
     tags = _load_tags()
     tags[file.filename] = {
-        "department": department.strip(),
+        "department": department.strip() or DEPARTMENT_CODE,
+        "category": category.strip() or "Academic Resources",
         "year": year.strip(),
         "course": course.strip(),
     }
     _save_tags(tags)
 
-    return {"message": "File uploaded", "path": path}
+    return {
+        "message": f"Document '{file.filename}' uploaded successfully",
+        "path": path,
+        "tags": tags[file.filename]
+    }
 
-# ==================== ADMIN ROUTING ====================
+# ==================== ADMIN & FACULTY DOC ROUTING ====================
 @app.get("/admin/docs")
-def list_admin_docs(user=Depends(require_admin)):
+def list_admin_docs(user=Depends(require_faculty_or_admin)):
     docs_dir = "data/docs"
     if not os.path.exists(docs_dir):
         return []
     
     tags = _load_tags()
     files = []
-    for filename in os.listdir(docs_dir):
+    for filename in sorted(os.listdir(docs_dir)):
+        if filename.endswith(".json"):
+            continue
         file_path = os.path.join(docs_dir, filename)
         if os.path.isfile(file_path):
             file_tags = tags.get(filename, {})
             files.append({
                 "name": filename,
                 "size": os.path.getsize(file_path),
-                "department": file_tags.get("department", ""),
+                "department": file_tags.get("department", DEPARTMENT_CODE),
+                "category": file_tags.get("category", "Academic Resources"),
                 "year": file_tags.get("year", ""),
                 "course": file_tags.get("course", ""),
             })
@@ -231,7 +274,7 @@ def delete_admin_doc(filename: str, user=Depends(require_admin)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/docs/{filename}/view")
-def view_admin_doc(filename: str, user=Depends(require_admin)):
+def view_admin_doc(filename: str, user=Depends(require_faculty_or_admin)):
     docs_dir = "data/docs"
     file_path = os.path.join(docs_dir, filename)
     
@@ -411,10 +454,13 @@ def rebuild_index(user=Depends(require_admin)):
     try:
         # Read saved tags and pass to ingestion
         tags_map = _load_tags()
-        ingest_documents("data/docs", tags_map=tags_map)
+        chunks_count = ingest_documents("data/docs", tags_map=tags_map)
         # Reload the index into memory
         load_index()
-        return {"message": "Search index rebuilt successfully!"}
+        return {
+            "message": "Search index rebuilt successfully!",
+            "chunks_count": chunks_count
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -561,6 +607,10 @@ async def chat(request: ChatRequest, user=Depends(get_current_user)):
             assistant_traces.append(trace_msg)
             yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
 
+            user_role = user.get("role", "student") if isinstance(user, dict) else getattr(user, "role", "student")
+            user_id = user.get("id") if isinstance(user, dict) else getattr(user, "id", None)
+            user_email = user.get("email") if isinstance(user, dict) else getattr(user, "email", None)
+
             # Run the LangGraph multi-agent pipeline
             # pyrefly: ignore [missing-attribute]
             async for event in campus_graph.astream({
@@ -570,6 +620,9 @@ async def chat(request: ChatRequest, user=Depends(get_current_user)):
                 "context": [],
                 "sources": [],
                 "response": "",
+                "user_role": user_role,
+                "user_id": user_id,
+                "user_email": user_email,
             }, stream_mode="updates"):
                 
                 for node_name, state_update in event.items():
@@ -588,9 +641,29 @@ async def chat(request: ChatRequest, user=Depends(get_current_user)):
                         trace_msg = "> [Timetable Agent] Querying Timetable MCP Server for live schedules and deadlines..."
                         assistant_traces.append(trace_msg)
                         yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
+
+                    elif node_name == "faculty_agent":
+                        trace_msg = "> [Faculty Agent] Querying department database for faculty directory, courses, and availability..."
+                        assistant_traces.append(trace_msg)
+                        yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
+
+                    elif node_name == "events_agent":
+                        trace_msg = "> [Event Agent] Searching department event calendar, workshops, and seminars..."
+                        assistant_traces.append(trace_msg)
+                        yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
+
+                    elif node_name == "notices_agent":
+                        trace_msg = "> [Notices Agent] Fetching latest announcements from department notice board..."
+                        assistant_traces.append(trace_msg)
+                        yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
                         
                     elif node_name == "planner_agent":
                         trace_msg = "> [Planner Agent] Generating personalized study schedule..."
+                        assistant_traces.append(trace_msg)
+                        yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
+
+                    elif node_name == "requests_agent":
+                        trace_msg = "> [Request Assistance Tool] Retrieving request guidelines, submission workflows, and human review policies..."
                         assistant_traces.append(trace_msg)
                         yield json.dumps({"type": "trace", "message": trace_msg}) + "\n"
                         
@@ -668,4 +741,405 @@ async def chat(request: ChatRequest, user=Depends(get_current_user)):
             yield json.dumps({"type": "error", "message": str(e)}) + "\n"
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
+
+
+# ==============================================================================
+# AIDA DEPARTMENT ENTITIES & HUMAN APPROVAL WORKFLOW API
+# ==============================================================================
+import db_service
+from typing import Optional, List
+
+# -------------------- 1. FACULTY --------------------
+class FacultyCreateRequest(BaseModel):
+    name: str
+    designation: str
+    department: str = DEPARTMENT_CODE
+    email: str
+    contact_info: Optional[str] = None
+    specialization: Optional[str] = None
+    subjects_handled: Optional[List[str]] = []
+    availability: Optional[str] = None
+
+class FacultyUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    designation: Optional[str] = None
+    email: Optional[str] = None
+    contact_info: Optional[str] = None
+    specialization: Optional[str] = None
+    subjects_handled: Optional[List[str]] = None
+    availability: Optional[str] = None
+    is_active: Optional[bool] = None
+
+@app.get("/faculty")
+def list_faculty(department: str = DEPARTMENT_CODE):
+    """Retrieve faculty directory for the department."""
+    return db_service.get_faculty_list(department=department)
+
+@app.post("/faculty")
+def add_faculty(data: FacultyCreateRequest, user=Depends(require_admin)):
+    """Create a new faculty record (Admin only)."""
+    try:
+        return db_service.create_faculty(data.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/faculty/{faculty_id}")
+def edit_faculty(faculty_id: str, data: FacultyUpdateRequest, user=Depends(require_faculty_or_admin)):
+    """Update a faculty record."""
+    try:
+        update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+        return db_service.update_faculty(faculty_id, update_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/faculty/{faculty_id}")
+def remove_faculty(faculty_id: str, user=Depends(require_admin)):
+    """Remove a faculty record (Admin only)."""
+    success = db_service.delete_faculty(faculty_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete faculty")
+    return {"message": "Faculty deleted successfully"}
+
+
+# -------------------- 2. STUDENTS --------------------
+class StudentCreateRequest(BaseModel):
+    enrollment_no: str
+    full_name: str
+    email: str
+    department: str = DEPARTMENT_CODE
+    semester: int = 6
+    section: str = "AIML-A"
+    batch_year: Optional[str] = "2023-2027"
+    contact_number: Optional[str] = None
+
+@app.get("/students")
+def list_students(section: Optional[str] = None, user=Depends(require_faculty_or_admin)):
+    """List students, optionally filtered by section (Faculty/Admin only)."""
+    return db_service.get_students_list(section=section)
+
+@app.get("/students/me")
+def get_my_student_profile(user=Depends(get_current_user)):
+    """Get the student profile associated with the currently authenticated user."""
+    profile = db_service.get_student_by_user_id(user["id"])
+    if not profile:
+        return {
+            "id": None,
+            "user_id": user["id"],
+            "email": user["email"],
+            "full_name": user.get("email", "").split("@")[0].title(),
+            "department": DEPARTMENT_CODE,
+            "section": "AIML-A",
+            "semester": 6
+        }
+    return profile
+
+@app.post("/students")
+def register_student(data: StudentCreateRequest, user=Depends(get_current_user)):
+    """Register or save student profile."""
+    payload = data.model_dump()
+    payload["user_id"] = user["id"]
+    try:
+        return db_service.create_student(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class StudentUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    semester: Optional[int] = None
+    section: Optional[str] = None
+    batch_year: Optional[str] = None
+    contact_number: Optional[str] = None
+
+@app.put("/students/{student_id}")
+def edit_student(student_id: str, data: StudentUpdateRequest, user=Depends(require_admin)):
+    """Update student record (Admin only)."""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    try:
+        return db_service.update_student(student_id, update_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/students/{student_id}")
+def remove_student(student_id: str, user=Depends(require_admin)):
+    """Delete student record (Admin only)."""
+    success = db_service.delete_student(student_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete student")
+    return {"message": "Student record deleted successfully"}
+
+
+# -------------------- 3. SUBJECTS --------------------
+class SubjectCreateRequest(BaseModel):
+    id: str
+    name: str
+    department: str = DEPARTMENT_CODE
+    semester: int = 6
+    credits: int = 3
+    description: Optional[str] = None
+    syllabus_url: Optional[str] = None
+    faculty_in_charge_id: Optional[str] = None
+
+class SubjectUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    semester: Optional[int] = None
+    credits: Optional[int] = None
+    description: Optional[str] = None
+
+@app.get("/subjects")
+def list_subjects(department: str = DEPARTMENT_CODE):
+    """Retrieve catalog of academic subjects for the department."""
+    return db_service.get_subjects_list(department=department)
+
+@app.post("/subjects")
+def create_subject(data: SubjectCreateRequest, user=Depends(require_admin)):
+    """Create or update a subject in the catalog (Admin only)."""
+    try:
+        return db_service.create_subject(data.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/subjects/{subject_id}")
+def edit_subject(subject_id: str, data: SubjectUpdateRequest, user=Depends(require_admin)):
+    """Update subject in catalog (Admin only)."""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    try:
+        return db_service.update_subject(subject_id, update_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/subjects/{subject_id}")
+def remove_subject(subject_id: str, user=Depends(require_admin)):
+    """Delete subject from catalog (Admin only)."""
+    success = db_service.delete_subject(subject_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete subject")
+    return {"message": "Subject deleted successfully"}
+
+
+# -------------------- 4. EVENTS --------------------
+class EventCreateRequest(BaseModel):
+    title: str
+    description: str
+    date_time: str
+    location: str
+    organizer: str
+    department: str = DEPARTMENT_CODE
+
+class EventUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    date_time: Optional[str] = None
+    location: Optional[str] = None
+    organizer: Optional[str] = None
+
+@app.get("/events")
+def list_events(upcoming: bool = False, department: str = DEPARTMENT_CODE):
+    """List department events, hackathons, and guest lectures."""
+    return db_service.get_events_list(department=department, upcoming_only=upcoming)
+
+@app.get("/events/{event_id}")
+def get_event(event_id: str):
+    """Get details for a specific department event."""
+    event = db_service.get_event_by_id(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return event
+
+@app.post("/events")
+def create_event(data: EventCreateRequest, user=Depends(require_faculty_or_admin)):
+    """Create a new department event (Faculty/Admin only)."""
+    payload = data.model_dump()
+    payload["created_by"] = user["id"]
+    try:
+        return db_service.create_event(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/events/{event_id}")
+def update_event(event_id: str, data: EventUpdateRequest, user=Depends(require_faculty_or_admin)):
+    """Update event information (Faculty/Admin only)."""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    try:
+        return db_service.update_event(event_id, update_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/events/{event_id}")
+def delete_event(event_id: str, user=Depends(require_faculty_or_admin)):
+    """Delete an event (Faculty/Admin only)."""
+    success = db_service.delete_event(event_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete event")
+    return {"message": "Event deleted successfully"}
+
+
+# -------------------- 5. STUDENT REQUESTS (HUMAN APPROVAL WORKFLOW) --------------------
+class StudentRequestCreate(BaseModel):
+    request_type: str
+    description: str
+    student_id: Optional[str] = None
+
+class StudentRequestStatusUpdate(BaseModel):
+    status: str
+    comments: Optional[str] = None
+    assigned_to: Optional[str] = None
+
+class StudentRequestReply(BaseModel):
+    additional_info: str
+
+@app.get("/requests")
+def list_all_requests(
+    status: Optional[str] = None,
+    assigned_to: Optional[str] = None,
+    user=Depends(require_faculty_or_admin)
+):
+    """
+    List all student requests for faculty/admin review.
+    Supports filtering by status ('Pending', 'Under Review', 'Approved', 'Rejected', 'More Information Required').
+    """
+    return db_service.get_student_requests(status=status, assigned_to=assigned_to)
+
+@app.get("/requests/my")
+def list_my_requests(user=Depends(get_current_user)):
+    """List requests submitted by the currently logged-in student."""
+    return db_service.get_student_requests(user_id=user["id"])
+
+@app.get("/requests/{request_id}")
+def get_student_request_detail(request_id: str, user=Depends(get_current_user)):
+    """Get detailed student request data including full review history timeline."""
+    req = db_service.get_student_request_by_id(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    # Authorization: Students can only view their own requests, while faculty/admin can view any request
+    if not (user.get("is_faculty") or user.get("is_admin")):
+        if req.get("user_id") and req["user_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Unauthorized to view this request")
+    return req
+
+@app.post("/requests")
+def submit_student_request(data: StudentRequestCreate, user=Depends(get_current_user)):
+    """Submit a new student request into the approval queue."""
+    payload = data.model_dump()
+    payload["user_id"] = user["id"]
+    try:
+        return db_service.create_student_request(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/requests/{request_id}/reply")
+def reply_student_request(
+    request_id: str,
+    data: StudentRequestReply,
+    user=Depends(get_current_user)
+):
+    """
+    Student submits additional information requested by faculty/administrator.
+    Transitions status from 'More Information Required' back to 'Under Review'.
+    """
+    actor_name = user.get("email", "Student").split("@")[0].replace(".", " ").title()
+    try:
+        updated = db_service.add_student_request_reply(
+            request_id=request_id,
+            user_id=user["id"],
+            additional_info=data.additional_info,
+            actor_name=actor_name
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Request not found or unauthorized")
+        return updated
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/requests/{request_id}/status")
+def review_student_request(
+    request_id: str,
+    data: StudentRequestStatusUpdate,
+    user=Depends(require_faculty_or_admin)
+):
+    """
+    Human Approval Action:
+    Faculty or Administrator approves, rejects, requests more information, or transitions a student request.
+    """
+    valid_statuses = {"Pending", "Under Review", "In Review", "Approved", "Rejected", "More Information Required"}
+    if data.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {valid_statuses}")
+
+    actor_name = user.get("email", "Staff").split("@")[0].replace(".", " ").title()
+    actor_role = user.get("role", "faculty").capitalize()
+
+    try:
+        return db_service.update_student_request_status(
+            request_id=request_id,
+            status=data.status,
+            comments=data.comments,
+            assigned_to=data.assigned_to,
+            actor_name=actor_name,
+            actor_role=actor_role
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/requests/{request_id}")
+def remove_student_request(request_id: str, user=Depends(require_admin)):
+    """Delete student request (Admin only)."""
+    success = db_service.delete_student_request(request_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete request")
+    return {"message": "Request deleted successfully"}
+
+
+# -------------------- 6. DB-BACKED NOTICES --------------------
+class NoticeCreateRequest(BaseModel):
+    title: str
+    content: str
+    department: str = DEPARTMENT_CODE
+    category: str = "Academic"
+    is_pinned: bool = False
+
+class NoticeUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    category: Optional[str] = None
+    is_pinned: Optional[bool] = None
+
+@app.get("/db/notices")
+def list_db_notices(department: str = DEPARTMENT_CODE, limit: int = 50):
+    """Fetch notices from database."""
+    return db_service.get_db_notices(department=department, limit=limit)
+
+@app.post("/db/notices")
+def add_db_notice(data: NoticeCreateRequest, user=Depends(require_faculty_or_admin)):
+    """Add notice to database (Faculty/Admin only)."""
+    payload = data.model_dump()
+    payload["created_by"] = user["id"]
+    try:
+        return db_service.create_db_notice(payload)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/db/notices/{notice_id}")
+def edit_db_notice(notice_id: str, data: NoticeUpdateRequest, user=Depends(require_faculty_or_admin)):
+    """Update notice in database (Faculty/Admin only)."""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    try:
+        return db_service.update_db_notice(notice_id, update_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/db/notices/{notice_id}")
+def remove_db_notice(notice_id: str, user=Depends(require_faculty_or_admin)):
+    """Delete notice from database."""
+    success = db_service.delete_db_notice(notice_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to delete notice")
+    return {"message": "Notice deleted successfully"}
+
+
+# -------------------- 7. DEPARTMENT OVERVIEW & ANALYTICS --------------------
+@app.get("/admin/overview")
+def get_admin_overview(user=Depends(require_admin)):
+    """Aggregated department statistics for the Admin Dashboard."""
+    return db_service.get_department_overview_stats()
+
 

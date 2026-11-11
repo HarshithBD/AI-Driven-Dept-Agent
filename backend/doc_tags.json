@@ -1,1 +1,68 @@
-{}
+{
+  "AIML_Department_Syllabus_2026.md": {
+    "department": "AIML",
+    "category": "AIML Syllabus",
+    "year": "2025-2026",
+    "course": "AI401-AI405"
+  },
+  "AIML_Academic_Regulations_and_Policies.md": {
+    "department": "AIML",
+    "category": "Academic Regulations",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "AIML_BTech_Project_Guidelines_2026.md": {
+    "department": "AIML",
+    "category": "Project Guidelines",
+    "year": "2025-2026",
+    "course": "AI-PROJ"
+  },
+  "AIML_Laboratory_Manual_and_Safety_Guidelines.md": {
+    "department": "AIML",
+    "category": "Laboratory Manuals",
+    "year": "2025-2026",
+    "course": "AI-LAB"
+  },
+  "Academic_Calendar_2025_2026.pdf": {
+    "department": "AIML",
+    "category": "Academic Resources",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "Academic_Policy_Handbook.pdf": {
+    "department": "AIML",
+    "category": "Department Policies",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "CS_Department_Handbook.pdf": {
+    "department": "AIML",
+    "category": "Department Policies",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "Hostel_Rules_and_Regulations.pdf": {
+    "department": "General",
+    "category": "Academic Resources",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "Campus_Facilities_Guide.pdf": {
+    "department": "General",
+    "category": "Academic Resources",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "Library_Guide.pdf": {
+    "department": "General",
+    "category": "Academic Resources",
+    "year": "2025-2026",
+    "course": "ALL"
+  },
+  "PMMS TASKS SCHEDULE FOR SEMESTER-8.pdf": {
+    "department": "AIML",
+    "category": "Project Guidelines",
+    "year": "2025-2026",
+    "course": "AI-PROJ"
+  }
+}

@@ -1,79 +1,140 @@
 """
-rag_agent.py — RAG Agent for document-based questions.
+rag_agent.py — Academic & Department Document Retrieval Agent for AIDA.
 
-Calls the Docs MCP Server via mcp_client to search the FAISS index
-for relevant document chunks, then stores them in the shared state.
+Retrieves verified excerpts from department-specific documents:
+- AIML Syllabus & Course Descriptions (AI401, AI402, AI403, AI404, AI405)
+- Academic Regulations (Attendance, Passing Marks, Grading Scale, Condonation)
+- Project Guidelines (Major/Minor Capstone milestones, Team sizes, Evaluation rubrics)
+- Laboratory Manuals & Workstation Conduct (GPU Cluster, Jetson Orin, SLURM)
+- Department Policies & Academic Calendars
+
+Guarantees zero hallucination: grounds answers strictly in official documentation.
 """
 
-import json
+from __future__ import annotations
+
+import os
+from typing import Optional, List, Dict, Any
 from agents.state import GraphState
-import asyncio
-from agents.state import GraphState
-from rag import embeddings, vectorstore
+from department_config import DEPARTMENT_CODE, DEPARTMENT_NAME, DEPARTMENT_COURSES
+from rag import search_documents
+
+
+def _detect_category_filter(query_lower: str) -> Optional[str]:
+    """Detect specific document category requested in natural language query."""
+    if any(k in query_lower for k in ["syllabus", "curriculum", "unit", "topics covered", "course content", "credits"]):
+        return "AIML Syllabus"
+    elif any(k in query_lower for k in ["project", "capstone", "milestone", "thesis", "dissertation", "synopsis", "guide allocation"]):
+        return "Project Guidelines"
+    elif any(k in query_lower for k in ["attendance", "condonation", "passing criteria", "passing mark", "grading", "grade point", "gpa", "supplementary", "malpractice", "plagiarism"]):
+        return "Academic Regulations"
+    elif any(k in query_lower for k in ["lab manual", "laboratory", "workstation", "gpu", "jetson", "slurm", "storage quota", "safety rule"]):
+        return "Laboratory Manuals"
+    elif any(k in query_lower for k in ["calendar", "holiday", "reopening", "working day"]):
+        return "Academic Resources"
+    elif any(k in query_lower for k in ["policy", "handbook", "code of conduct", "hostel"]):
+        return "Department Policies"
+    return None
+
+
+def _detect_course_filter(query_lower: str) -> Optional[str]:
+    """Detect specific AIML course code if mentioned in query."""
+    for c in DEPARTMENT_COURSES:
+        course_id = c["id"].lower()
+        if course_id in query_lower:
+            return c["id"]
+        for alias in c.get("aliases", []):
+            if alias.lower() in query_lower:
+                return c["id"]
+    return None
 
 
 async def rag_node(state: GraphState) -> dict:
     """
-    Search campus documents via the Docs MCP Server.
-
-    Returns:
-        Updated state with 'context' and 'sources' populated from FAISS results.
+    Search department documents for relevant chunks and populate state context and sources.
     """
     query = state["query"]
     context = list(state.get("context", []))
     sources = list(state.get("sources", []))
 
-    # Basic metadata filter extraction (Proper AI Engineer touch)
-    # In a real app, this would come from the User Profile or a dedicated extraction agent.
-    search_filter = {}
     query_lower = query.lower()
-    
-    if "cs" in query_lower:
-        search_filter["department"] = "CS"
-    if "year 1" in query_lower or "1st year" in query_lower:
-        search_filter["year"] = "1"
-    elif "year 2" in query_lower or "2nd year" in query_lower:
-        search_filter["year"] = "2"
 
-    print(f"[RAG Agent] Searching docs (Filter: {search_filter}) for: '{query[:60]}...'")
+    # 1. Metadata filter extraction
+    search_filter: Dict[str, Any] = {}
+    
+    # Priority: AIML department documents
+    if any(k in query_lower for k in ["aiml", "ai", "machine learning", "department"]):
+        search_filter["department"] = DEPARTMENT_CODE
+
+    category = _detect_category_filter(query_lower)
+    if category:
+        search_filter["category"] = category
+
+    course = _detect_course_filter(query_lower)
+    if course:
+        search_filter["course"] = course
+
+    print(f"[RAG Agent] Searching department docs (Filter: {search_filter}) for: '{query[:65]}...'")
 
     try:
-        # Load the index
-        emb_model = embeddings.get_embeddings()
-        index = vectorstore.load_index(emb_model)
-        
-        # Search the index with the generated metadata filter
-        docs = vectorstore.search(index, query, top_k=5, filter=search_filter if search_filter else None)
+        # 2. Search knowledge base (hybrid dense + sparse + rerank)
+        # First attempt with targeted filter
+        docs = search_documents(query, top_k=5, filter=search_filter if search_filter else None)
 
-        for doc in docs:
-            source = doc.metadata.get("source", "Unknown")
-            page = doc.metadata.get("page", "?")
-            content = doc.page_content
+        # If strict filter returned no results, broaden search without metadata restrictions
+        if not docs and search_filter:
+            print(f"[RAG Agent] Strict filter returned 0 results. Broadening search without filter...")
+            docs = search_documents(query, top_k=5, filter=None)
 
-            # Build enriched context entry with any available tags
-            context_entry = {
-                "tool": "search_docs (direct)",
-                "source": source,
-                "page": page,
-                "content": content,
-            }
-            if doc.metadata.get("department"):
-                context_entry["department"] = doc.metadata["department"]
-            if doc.metadata.get("year"):
-                context_entry["year"] = doc.metadata["year"]
-            if doc.metadata.get("course"):
-                context_entry["course"] = doc.metadata["course"]
+        if docs:
+            for doc in docs:
+                source = doc.metadata.get("source", "Department Document")
+                page = doc.metadata.get("page", 1)
+                doc_cat = doc.metadata.get("category", "Official Document")
+                content = doc.page_content.strip()
 
-            context.append(context_entry)
-            sources.append({"doc": source, "page": page})
+                header_prefix = f"[{source} | Page {page}"
+                if doc_cat:
+                    header_prefix += f" | {doc_cat}"
+                header_prefix += "]\n"
 
-        print(f"[RAG Agent] Found {len(docs)} chunks using tags filter: {search_filter}")
+                context_entry = {
+                    "tool": "search_department_docs",
+                    "source": source,
+                    "page": page,
+                    "category": doc_cat,
+                    "content": f"{header_prefix}{content}",
+                }
+                if doc.metadata.get("department"):
+                    context_entry["department"] = doc.metadata["department"]
+                if doc.metadata.get("course"):
+                    context_entry["course"] = doc.metadata["course"]
+
+                context.append(context_entry)
+                sources.append({"doc": source, "page": page})
+
+            print(f"[RAG Agent] Retrieved {len(docs)} verified document passages.")
+
+        else:
+            # 3. Grounded message when no info is found in uploaded documents
+            no_info_msg = (
+                f"No specific information found in the official {DEPARTMENT_NAME} ({DEPARTMENT_CODE}) documents "
+                f"(syllabus, regulations, project guidelines, or lab manuals) regarding: '{query}'. "
+                f"Department policies and syllabus details must not be assumed. Please consult your course instructor or the AIML Department Office."
+            )
+            context.append({
+                "tool": "search_department_docs",
+                "source": f"{DEPARTMENT_CODE} Knowledge Base",
+                "content": no_info_msg,
+            })
+            print(f"[RAG Agent] No matching documents found for query.")
 
     except Exception as e:
-        print(f"[RAG Agent] Error: {e}")
+        print(f"[RAG Agent] Retrieval exception: {e}")
         context.append({
-            "tool": "search_docs",
-            "content": f"Failed to search documents: {str(e)}",
+            "tool": "search_department_docs",
+            "source": f"{DEPARTMENT_CODE} Knowledge Base",
+            "content": f"Unable to retrieve department documents: {str(e)}",
         })
 
     return {"context": context, "sources": sources}

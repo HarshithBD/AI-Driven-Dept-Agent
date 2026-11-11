@@ -10,7 +10,7 @@ function LoginContent() {
     const searchParams = useSearchParams();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [role, setRole] = useState<"student" | "admin">("student");
+    const [role, setRole] = useState<"student" | "faculty" | "admin">("student");
     const [error, setError] = useState("");
     const [info, setInfo] = useState("");
     const infoInitialized = useRef(false);
@@ -44,33 +44,43 @@ function LoginContent() {
 
         const token = data.session.access_token;
 
-        if (role === "admin") {
-            try {
-                const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
-                const res = await fetch(`${baseUrl}/me`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+        // Verify role permissions with backend server
+        try {
+            const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+            const res = await fetch(`${baseUrl}/me`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
 
-                if (res.ok) {
-                    const userData = await res.json();
-                    if (!userData.is_admin) {
-                        await supabase.auth.signOut();
-                        setError("You do not have Administrator privileges.");
-                        return;
-                    }
-                } else {
-                    setError("Failed to verify admin status.");
+            if (res.ok) {
+                const userData = await res.json();
+                if (role === "admin" && !userData.is_admin) {
+                    await supabase.auth.signOut();
+                    setError("Access denied: You do not have Administrator privileges.");
                     return;
                 }
-            } catch (authVerifyErr) {
-                console.error("Auth verification failed:", authVerifyErr);
-                setError("Network error verifying admin status.");
+                if (role === "faculty" && !userData.is_faculty) {
+                    await supabase.auth.signOut();
+                    setError("Access denied: You do not have Faculty privileges.");
+                    return;
+                }
+            } else {
+                setError("Failed to verify user credentials with department server.");
                 return;
             }
+        } catch (authVerifyErr) {
+            console.error("Auth verification failed:", authVerifyErr);
+            setError("Network error verifying account role.");
+            return;
         }
 
         localStorage.setItem("token", token);
-        router.push(role === "admin" ? "/admin" : "/");
+        if (role === "admin") {
+            router.push("/admin");
+        } else if (role === "faculty") {
+            router.push("/faculty");
+        } else {
+            router.push("/");
+        }
     };
 
     return (
@@ -87,8 +97,8 @@ function LoginContent() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                         </svg>
                     </div>
-                    <h2 className="text-3xl font-bold tracking-tight text-foreground">Welcome back</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">Sign in to your Campus Assistant account</p>
+                    <h2 className="text-3xl font-bold tracking-tight text-foreground">Welcome to AIDA</h2>
+                    <p className="mt-2 text-sm text-muted-foreground">Sign in to your AIDA account • AIML Department</p>
                 </div>
 
                 {error && (
@@ -108,7 +118,7 @@ function LoginContent() {
                         <button
                             type="button"
                             onClick={() => setRole("student")}
-                            className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-lg transition-all duration-300 ${role === "student"
+                            className={`flex-1 py-2 px-3 text-xs sm:text-sm font-medium rounded-lg transition-all duration-300 ${role === "student"
                                 ? "bg-primary/20 text-primary border border-primary/50 shadow-[0_0_15px_rgba(0,229,255,0.2)]"
                                 : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                                 }`}
@@ -117,8 +127,18 @@ function LoginContent() {
                         </button>
                         <button
                             type="button"
+                            onClick={() => setRole("faculty")}
+                            className={`flex-1 py-2 px-3 text-xs sm:text-sm font-medium rounded-lg transition-all duration-300 ${role === "faculty"
+                                ? "bg-accent/20 text-accent border border-accent/50 shadow-[0_0_15px_rgba(0,255,65,0.2)]"
+                                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                                }`}
+                        >
+                            Faculty
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => setRole("admin")}
-                            className={`flex-1 py-2.5 px-4 text-sm font-medium rounded-lg transition-all duration-300 ${role === "admin"
+                            className={`flex-1 py-2 px-3 text-xs sm:text-sm font-medium rounded-lg transition-all duration-300 ${role === "admin"
                                 ? "bg-secondary/20 text-secondary border border-secondary/50 shadow-[0_0_15px_rgba(157,0,255,0.2)]"
                                 : "text-muted-foreground hover:text-foreground hover:bg-white/5"
                                 }`}

@@ -14,6 +14,9 @@ from agents.rag_agent import rag_node
 from agents.timetable_agent import timetable_node
 from agents.planner_agent import planner_node
 from agents.notices_agent import notices_node
+from agents.faculty_agent import faculty_node
+from agents.events_agent import events_node
+from agents.requests_agent import requests_node
 from agents.response_writer import response_writer_node
 
 
@@ -33,6 +36,12 @@ def route_by_intent(state: GraphState) -> str:
         return "planner_agent"
     elif intent == "notices":
         return "notices_agent"
+    elif intent == "faculty":
+        return "faculty_agent"
+    elif intent == "events":
+        return "events_agent"
+    elif intent == "requests":
+        return "requests_agent"
     else:
         # "general" or unknown — skip straight to response writer
         return "response_writer"
@@ -49,6 +58,9 @@ def build_graph() -> StateGraph:
     graph.add_node("timetable_agent", timetable_node)
     graph.add_node("planner_agent", planner_node)
     graph.add_node("notices_agent", notices_node)
+    graph.add_node("faculty_agent", faculty_node)
+    graph.add_node("events_agent", events_node)
+    graph.add_node("requests_agent", requests_node)
     graph.add_node("response_writer", response_writer_node)
 
     # ==================== ENTRY POINT ====================
@@ -64,6 +76,9 @@ def build_graph() -> StateGraph:
             "timetable_agent": "timetable_agent",
             "planner_agent": "planner_agent",
             "notices_agent": "notices_agent",
+            "faculty_agent": "faculty_agent",
+            "events_agent": "events_agent",
+            "requests_agent": "requests_agent",
             "response_writer": "response_writer",
         },
     )
@@ -73,6 +88,9 @@ def build_graph() -> StateGraph:
     graph.add_edge("timetable_agent", "response_writer")
     graph.add_edge("planner_agent", "response_writer")
     graph.add_edge("notices_agent", "response_writer")
+    graph.add_edge("faculty_agent", "response_writer")
+    graph.add_edge("events_agent", "response_writer")
+    graph.add_edge("requests_agent", "response_writer")
 
     # ==================== RESPONSE WRITER → END ====================
     graph.add_edge("response_writer", END)

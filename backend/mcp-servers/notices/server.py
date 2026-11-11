@@ -18,16 +18,20 @@ def load_notices():
 @mcp.tool()
 def get_latest_notices(department: str = None, limit: int = 5) -> str:
     """
-    Fetch the latest campus notices/announcements.
+    Fetch the latest department/campus notices and announcements.
     
     Args:
-        department: Optional department filter (e.g. 'CS', 'IT').
+        department: Optional department filter (e.g. 'AIML', 'General').
         limit: Max number of notices to return.
     """
     notices = load_notices()
     
     if department:
-        notices = [n for n in notices if n.get("department") == department or n.get("department") == "General"]
+        dept_clean = department.strip().upper()
+        notices = [
+            n for n in notices
+            if n.get("department", "").upper() == dept_clean or n.get("department", "").upper() == "GENERAL"
+        ]
     
     # Sort by date (descending)
     notices.sort(key=lambda x: x.get("date", ""), reverse=True)
