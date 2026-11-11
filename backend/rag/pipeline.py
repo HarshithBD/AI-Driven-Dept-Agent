@@ -65,7 +65,7 @@ def load_index() -> None:
     global _index, _bm25
     try:
         embedding_model = embeddings.get_embeddings()
-        _index = vectorstore.load_index(embedding_model)
+        _index = vectorstore.load_index(embedding_model) if embedding_model else None
     except Exception as e:
         print(f"[RAG Pipeline] Qdrant load note: {e}")
         _index = None

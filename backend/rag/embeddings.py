@@ -6,19 +6,24 @@ text embeddings for documents and queries.
 """
 
 import os
+from typing import Optional
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 
 
-def get_embeddings() -> FastEmbedEmbeddings:
+def get_embeddings() -> Optional[FastEmbedEmbeddings]:
     """
     Create and return a local FastEmbed embedding model.
 
     Runs locally using FastEmbed (no PyTorch, very lightweight, completely free).
-    Model: sentence-transformers/all-MiniLM-L6-v2 (default in FastEmbed)
+    Model: BAAI/bge-small-en-v1.5 (384 dimensions)
 
     Returns:
-        FastEmbedEmbeddings instance.
+        FastEmbedEmbeddings instance or None if initialization fails.
     """
-    return FastEmbedEmbeddings(
-        model_name="BAAI/bge-small-en-v1.5",
-    )
+    try:
+        return FastEmbedEmbeddings(
+            model_name="BAAI/bge-small-en-v1.5",
+        )
+    except Exception as e:
+        print(f"[Embeddings] FastEmbed initialization note (operating in sparse fallback): {e}")
+        return None

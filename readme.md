@@ -56,7 +56,7 @@ AIDA integrates a **LangGraph Supervisor Multi-Agent Graph** that categorizes st
 - **Real-Time AI Chat**: Streaming responses with expandable agent routing traces and source links.
 - **Request Submission**: Submit formal requests for Bonafide Certificates, Medical/Casual Leave, On-Duty (OD) permissions, Project Guide allocation, and GPU compute access.
 - **Request Status Tracking**: Real-time status inspection (`Pending`, `Under Review`, `Approved`, `Rejected`, `More Information Required`) with reviewer remarks.
-- **Department Schedule**: Interactive timetable matrix and upcoming assignment deadlines view.
+- **Department Schedule**: Section-specific class timetable and assignment deadlines loaded from department CSVs.
 - **Notice Board**: Department circulars with pinned announcement indicators.
 
 ### 3. Faculty Dashboard (`/faculty`)
@@ -72,7 +72,7 @@ AIDA integrates a **LangGraph Supervisor Multi-Agent Graph** that categorizes st
 - **Student Roster Manager**: Full CRUD on student records, enrollment numbers, semesters, and sections.
 - **Faculty Directory Manager**: Full CRUD on faculty titles, specializations, office hours, and contact details.
 - **Curriculum Catalog Manager**: Full CRUD on semester courses, credits, and course descriptions.
-- **Timetable Management**: Upload CSV schedules, view parsed day/time grids, and purge schedules.
+- **Timetable & Deadline Management**: Upload, preview, and delete timetable and assignment-deadline CSVs; schedule data is available to students by section.
 - **Document Knowledge Base**: Upload PDFs/markdown files, preview document text, delete documents, and trigger FAISS vector index rebuilding.
 - **Audit & Telemetry Logs**: Real-time query classifications, agent routes, execution latencies, and user activity feeds.
 - **Destructive Action Guards**: Interactive confirmation dialogs and input validation across all deletion endpoints.
@@ -298,6 +298,26 @@ cd frontend
 npm run dev
 ```
 *Frontend will be running at:* `http://localhost:3000`
+
+---
+
+## Running Automated Tests
+
+AIDA includes a comprehensive automated test suite covering RBAC, multi-agent LangGraph routing, RAG chunking and metadata preservation, SQL injection defense, human approval workflows, and AI honesty guardrails:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+pytest test/test_integrated_architecture.py test/test_student_requests_unit.py test/test_faculty_agent_unit.py test/test_schedule_api.py test/test_events_agent_unit.py test/test_rag_system_unit.py test/test_security_controls.py -v
+```
+
+All **40 tests** run locally without requiring external LLM API credits or network access.
+
+---
+
+## Security Documentation
+
+For an in-depth breakdown of all implemented application security controls (secrets management, server-side RBAC, Content Security Policy, SQL injection prevention, safe file uploads, and rate limiting roadmap), see [`SECURITY.md`](SECURITY.md).
 
 ---
 

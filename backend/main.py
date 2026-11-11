@@ -20,6 +20,8 @@ import os
 import json
 import shutil
 import requests
+import csv
+import re
 
 from rag import load_index, ingest_documents
 import traceback
@@ -41,12 +43,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AIDA – AI-Driven Department Agent API", lifespan=lifespan)
 
 # ==================== CORS ====================
+# Restrict to the frontend origin. Set FRONTEND_URL in .env for production.
+# Defaults to localhost:3000 for local development.
+_ALLOWED_ORIGINS_RAW = os.getenv("FRONTEND_URL", "http://localhost:3000")
+_ALLOWED_ORIGINS = [o.strip().rstrip("/") for o in _ALLOWED_ORIGINS_RAW.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Requested-With"],
 )
 
 # ==================== SUPABASE CONFIG ====================
@@ -183,7 +190,15 @@ def assign_role(request: RoleAssignRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== TAG STORAGE HELPERS ====================
-DOC_TAGS_PATH = os.path.join(os.path.dirname(__file__), "doc_tags.json")
+_BACKEND_DIR = Path(__file__).resolve().parent
+DOC_TAGS_PATH = str(_BACKEND_DIR / "doc_tags.json")
+DOCS_DATA_DIR = _BACKEND_DIR / "data" / "docs"
+NOTICES_DATA_DIR = _BACKEND_DIR / "data" / "notices"
+TIMETABLE_DATA_DIR = _BACKEND_DIR / "data" / "timetable"
+
+# Allowlist for uploaded file extensions (documents only)
+_ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".md", ".txt", ".docx"}
+_MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
 def _load_tags() -> dict:
     if not os.path.exists(DOC_TAGS_PATH):
@@ -195,6 +210,13 @@ def _save_tags(tags: dict) -> None:
     with open(DOC_TAGS_PATH, "w") as f:
         json.dump(tags, f, indent=2)
 
+def _safe_filename(filename: str) -> str:
+    """Strip any directory component and reject traversal attempts."""
+    name = os.path.basename(filename)
+    if not name or ".." in name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return name
+
 # ==================== FILE UPLOAD (FACULTY / ADMIN) ====================
 @app.post("/upload")
 async def upload_file(
@@ -205,15 +227,29 @@ async def upload_file(
     course: str = Form(default=""),
     user=Depends(require_faculty_or_admin),
 ):
-    os.makedirs("data/docs", exist_ok=True)
-    path = f"data/docs/{file.filename}"
+    # Validate filename and extension
+    safe_name = _safe_filename(file.filename or "")
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{ext}' not allowed. Supported: {', '.join(_ALLOWED_UPLOAD_EXTENSIONS)}"
+        )
 
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    # Read and size-check before writing
+    contents = await file.read()
+    if len(contents) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds maximum allowed size of 20 MB")
+
+    DOCS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    dest_path = DOCS_DATA_DIR / safe_name
+
+    with open(dest_path, "wb") as f:
+        f.write(contents)
 
     # Save tags for this file
     tags = _load_tags()
-    tags[file.filename] = {
+    tags[safe_name] = {
         "department": department.strip() or DEPARTMENT_CODE,
         "category": category.strip() or "Academic Resources",
         "year": year.strip(),
@@ -222,70 +258,67 @@ async def upload_file(
     _save_tags(tags)
 
     return {
-        "message": f"Document '{file.filename}' uploaded successfully",
-        "path": path,
-        "tags": tags[file.filename]
+        "message": f"Document '{safe_name}' uploaded successfully",
+        "path": str(dest_path.relative_to(_BACKEND_DIR)),
+        "tags": tags[safe_name]
     }
 
 # ==================== ADMIN & FACULTY DOC ROUTING ====================
 @app.get("/admin/docs")
 def list_admin_docs(user=Depends(require_faculty_or_admin)):
-    docs_dir = "data/docs"
-    if not os.path.exists(docs_dir):
+    if not DOCS_DATA_DIR.exists():
         return []
     
     tags = _load_tags()
     files = []
-    for filename in sorted(os.listdir(docs_dir)):
-        if filename.endswith(".json"):
+    for filename in sorted(DOCS_DATA_DIR.iterdir()):
+        if filename.suffix == ".json" or not filename.is_file():
             continue
-        file_path = os.path.join(docs_dir, filename)
-        if os.path.isfile(file_path):
-            file_tags = tags.get(filename, {})
-            files.append({
-                "name": filename,
-                "size": os.path.getsize(file_path),
-                "department": file_tags.get("department", DEPARTMENT_CODE),
-                "category": file_tags.get("category", "Academic Resources"),
-                "year": file_tags.get("year", ""),
-                "course": file_tags.get("course", ""),
-            })
+        file_tags = tags.get(filename.name, {})
+        files.append({
+            "name": filename.name,
+            "size": filename.stat().st_size,
+            "department": file_tags.get("department", DEPARTMENT_CODE),
+            "category": file_tags.get("category", "Academic Resources"),
+            "year": file_tags.get("year", ""),
+            "course": file_tags.get("course", ""),
+        })
     return files
 
 @app.delete("/admin/docs/{filename}")
 def delete_admin_doc(filename: str, user=Depends(require_admin)):
-    docs_dir = "data/docs"
-    file_path = os.path.join(docs_dir, filename)
+    safe_name = _safe_filename(filename)
+    file_path = DOCS_DATA_DIR / safe_name
     
-    if not os.path.abspath(file_path).startswith(os.path.abspath(docs_dir)):
+    if not file_path.resolve().is_relative_to(DOCS_DATA_DIR.resolve()):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    if not os.path.exists(file_path):
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
         
     try:
-        os.remove(file_path)
+        file_path.unlink()
         # Also clean up tags entry
         tags = _load_tags()
-        tags.pop(filename, None)
+        tags.pop(safe_name, None)
         _save_tags(tags)
-        return {"message": f"Deleted {filename} successfully"}
+        return {"message": f"Deleted {safe_name} successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/docs/{filename}/view")
 def view_admin_doc(filename: str, user=Depends(require_faculty_or_admin)):
-    docs_dir = "data/docs"
-    file_path = os.path.join(docs_dir, filename)
+    safe_name = _safe_filename(filename)
+    file_path = DOCS_DATA_DIR / safe_name
     
-    # Simple path traversal protection
-    if not os.path.abspath(file_path).startswith(os.path.abspath(docs_dir)):
+    # Path traversal protection
+    if not file_path.resolve().is_relative_to(DOCS_DATA_DIR.resolve()):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    if not os.path.exists(file_path):
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
         
-    return FileResponse(file_path)
+    return FileResponse(str(file_path))
 
 @app.get("/admin/logs")
 def get_admin_logs(user=Depends(require_admin)):
@@ -310,42 +343,74 @@ async def upload_timetable(
     group: str = Form(default=""),
     user=Depends(require_admin)
 ):
-    os.makedirs("data/timetable", exist_ok=True)
+    TIMETABLE_DATA_DIR.mkdir(parents=True, exist_ok=True)
     if group.strip():
         # Save group-specific file: timetable_CS-A.csv, timetable_CS-B.csv etc.
         safe_group = group.strip().upper().replace(" ", "-")
-        path = f"data/timetable/timetable_{safe_group}.csv"
+        path = TIMETABLE_DATA_DIR / f"timetable_{safe_group}.csv"
     else:
         # Falling back to shared / global timetable
-        path = "data/timetable/timetable.csv"
+        path = TIMETABLE_DATA_DIR / "timetable.csv"
     with open(path, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    return {"message": f"Timetable uploaded successfully", "path": path}
+    return {
+        "message": "Timetable uploaded successfully",
+        "path": os.path.join("data", "timetable", path.name),
+    }
 
 @app.post("/upload-deadlines")
 async def upload_deadlines(file: UploadFile = File(...), user=Depends(require_admin)):
-    os.makedirs("data/timetable", exist_ok=True)
-    path = f"data/timetable/deadlines.csv"
+    TIMETABLE_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = TIMETABLE_DATA_DIR / "deadlines.csv"
     with open(path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     return {"message": "Deadlines uploaded successfully"}
 
+def _read_timetable_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as file:
+            return list(csv.DictReader(file))
+    except (OSError, UnicodeError, csv.Error) as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read schedule CSV: {exc}") from exc
+
+@app.get("/deadlines")
+def get_student_deadlines(user=Depends(get_current_user)):
+    """Return read-only deadline data for authenticated department users."""
+    rows = _read_timetable_csv(TIMETABLE_DATA_DIR / "deadlines.csv")
+    return sorted(rows, key=lambda row: row.get("due_date", ""))
+
+@app.get("/timetable")
+def get_student_timetable(group: str = "AIML-A", user=Depends(get_current_user)):
+    """Return the requested section timetable to authenticated department users."""
+    group_name = group.strip().upper().replace(" ", "-")
+    if not re.fullmatch(r"[A-Z0-9-]+", group_name):
+        raise HTTPException(status_code=400, detail="Invalid timetable section")
+
+    group_path = TIMETABLE_DATA_DIR / f"timetable_{group_name}.csv"
+    if group_path.exists():
+        return _read_timetable_csv(group_path)
+
+    rows = _read_timetable_csv(TIMETABLE_DATA_DIR / "timetable.csv")
+    if rows and "student_group" in rows[0]:
+        rows = [row for row in rows if row.get("student_group", "").strip().upper() == group_name]
+    return rows
+
 @app.get("/admin/deadlines")
 def get_admin_deadlines(user=Depends(require_admin)):
     """Read deadlines.csv and return rows as a list of dicts."""
-    path = "data/timetable/deadlines.csv"
-    if not os.path.exists(path):
+    path = TIMETABLE_DATA_DIR / "deadlines.csv"
+    if not path.exists():
         return {"exists": False, "rows": [], "headers": []}
     try:
-        import csv as _csv
-        with open(path, "r", encoding="utf-8") as f:
-            rows = list(_csv.DictReader(f))
+        rows = _read_timetable_csv(path)
         headers = list(rows[0].keys()) if rows else []
         return {
             "exists": True,
             "rows": rows,
             "headers": headers,
-            "size": os.path.getsize(path),
+            "size": path.stat().st_size,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -353,19 +418,19 @@ def get_admin_deadlines(user=Depends(require_admin)):
 @app.delete("/admin/deadlines")
 def delete_admin_deadlines(user=Depends(require_admin)):
     """Delete the uploaded deadlines.csv file."""
-    path = "data/timetable/deadlines.csv"
-    if not os.path.exists(path):
+    path = TIMETABLE_DATA_DIR / "deadlines.csv"
+    if not path.exists():
         raise HTTPException(status_code=404, detail="No deadlines file found")
     try:
-        os.remove(path)
+        path.unlink()
         return {"message": "Deadlines deleted successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/admin/notices")
 def get_admin_notices(user=Depends(require_admin)):
-    path = "data/notices/notices.json"
-    if not os.path.exists(path):
+    path = NOTICES_DATA_DIR / "notices.json"
+    if not path.exists():
         return []
     with open(path, "r") as f:
         return json.load(f)
@@ -373,18 +438,16 @@ def get_admin_notices(user=Depends(require_admin)):
 @app.get("/admin/timetable")
 def get_admin_timetable(user=Depends(require_admin)):
     """List all uploaded timetable files with their row counts."""
-    timetable_dir = "data/timetable"
-    if not os.path.exists(timetable_dir):
+    timetable_dir = TIMETABLE_DATA_DIR
+    if not timetable_dir.exists():
         return []
-    import csv as _csv
     results = []
     for fname in sorted(os.listdir(timetable_dir)):
         if not fname.endswith(".csv") or fname == "deadlines.csv":
             continue
-        fpath = os.path.join(timetable_dir, fname)
+        fpath = timetable_dir / fname
         try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                rows = list(_csv.DictReader(f))
+            rows = _read_timetable_csv(fpath)
             # Derive the group label from the filename
             if fname == "timetable.csv":
                 group_label = "Shared / Global"
@@ -398,7 +461,7 @@ def get_admin_timetable(user=Depends(require_admin)):
                 "rows": rows,
                 "headers": headers,
                 "row_count": len(rows),
-                "size": os.path.getsize(fpath),
+                "size": fpath.stat().st_size,
             })
         except Exception as e:
             results.append({"filename": fname, "group": fname, "error": str(e), "rows": [], "headers": [], "row_count": 0, "size": 0})
@@ -407,7 +470,7 @@ def get_admin_timetable(user=Depends(require_admin)):
 @app.delete("/admin/timetable/{filename}")
 def delete_admin_timetable(filename: str, user=Depends(require_admin)):
     """Delete a specific timetable file by filename (e.g. timetable_CS-A.csv)."""
-    timetable_dir = os.path.abspath("data/timetable")
+    timetable_dir = os.path.abspath(TIMETABLE_DATA_DIR)
     file_path = os.path.join(timetable_dir, filename)
     if not file_path.startswith(timetable_dir):
         raise HTTPException(status_code=400, detail="Invalid filename")
@@ -424,8 +487,8 @@ def delete_admin_timetable(filename: str, user=Depends(require_admin)):
 @app.delete("/admin/notices/{notice_index}")
 def delete_admin_notice(notice_index: int, user=Depends(require_admin)):
     """Delete a single notice by its index in the notices.json array."""
-    path = "data/notices/notices.json"
-    if not os.path.exists(path):
+    path = NOTICES_DATA_DIR / "notices.json"
+    if not path.exists():
         raise HTTPException(status_code=404, detail="notices.json not found")
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -443,10 +506,20 @@ def delete_admin_notice(notice_index: int, user=Depends(require_admin)):
 
 @app.post("/upload-notices")
 async def upload_notices(file: UploadFile = File(...), user=Depends(require_admin)):
-    os.makedirs("data/notices", exist_ok=True)
-    path = "data/notices/notices.json"
+    # Only allow .json uploads for notices
+    safe_name = _safe_filename(file.filename or "notices.json")
+    if not safe_name.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Notices file must be a .json file")
+    NOTICES_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = NOTICES_DATA_DIR / "notices.json"
+    contents = await file.read()
+    # Validate JSON before writing
+    try:
+        json.loads(contents)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON in notices file")
     with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+        f.write(contents)
     return {"message": "Notices updated successfully"}
 
 @app.post("/rebuild-index")
@@ -454,7 +527,7 @@ def rebuild_index(user=Depends(require_admin)):
     try:
         # Read saved tags and pass to ingestion
         tags_map = _load_tags()
-        chunks_count = ingest_documents("data/docs", tags_map=tags_map)
+        chunks_count = ingest_documents(str(DOCS_DATA_DIR), tags_map=tags_map)
         # Reload the index into memory
         load_index()
         return {
@@ -1141,5 +1214,3 @@ def remove_db_notice(notice_id: str, user=Depends(require_faculty_or_admin)):
 def get_admin_overview(user=Depends(require_admin)):
     """Aggregated department statistics for the Admin Dashboard."""
     return db_service.get_department_overview_stats()
-
-

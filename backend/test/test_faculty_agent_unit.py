@@ -7,15 +7,12 @@ import sys, os
 from unittest.mock import MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# Mock LangChain and external parser modules for unit testing environment
+# Mock external network and LLM modules if not in test runtime environment
+# NOTE: Never mock internal local packages (rag, agents, db_service) or installed core libraries.
 for mod_name in [
-    "langchain", "langchain.schema", "langchain_core", "langchain_core.messages",
-    "langchain_core.documents", "langchain_google_genai", "langgraph", "langgraph.graph",
-    "langchain_text_splitters", "langchain_huggingface", "langchain_community",
-    "langchain_community.embeddings", "langchain_community.embeddings.fastembed",
+    "langchain_google_genai",
     "fastmcp", "fastmcp.client", "mcp", "mcp.client", "mcp.client.stdio", "mcp_client",
-    "pdfplumber", "docx", "qdrant_client", "rank_bm25", "flashrank",
-    "fastembed", "rag", "rag.embeddings", "rag.vectorstore", "rag.pipeline"
+    "qdrant_client"
 ]:
     if mod_name not in sys.modules:
         sys.modules[mod_name] = MagicMock()

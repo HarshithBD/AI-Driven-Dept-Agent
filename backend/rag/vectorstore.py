@@ -52,7 +52,7 @@ def _get_client() -> Optional[Any]:
     if not QdrantClient:
         return None
     try:
-        return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=3.0)
+        return QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=3.0, check_compatibility=False)
     except Exception as e:
         print(f"[Vectorstore] Qdrant client initialization warning: {e}")
         return None
