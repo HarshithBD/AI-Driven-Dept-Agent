@@ -184,9 +184,13 @@ def assign_role(request: RoleAssignRequest):
             timeout=5
         )
         if response.status_code not in (200, 201, 204):
-            raise HTTPException(status_code=response.status_code, detail="Failed to assign role")
+            print(f"[Assign-Role Error] Supabase returned status {response.status_code}: {response.text}")
+            raise HTTPException(status_code=response.status_code, detail=f"Failed to assign role: {response.text}")
         return {"message": "Role assigned successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"[Assign-Role Exception] {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==================== TAG STORAGE HELPERS ====================

@@ -20,8 +20,13 @@ export default function SignupPage() {
         setSuccess("");
 
         const { data, error } = await supabase.auth.signUp({
-            email,        // ✅ explicit email
+            email,
             password,
+            options: {
+                data: {
+                    role: role,
+                },
+            },
         });
 
         if (error) {
@@ -40,16 +45,14 @@ export default function SignupPage() {
                 });
 
                 if (!roleResponse.ok) {
-                    setError("Account created, but failed to assign role. Please contact support.");
-                    return;
+                    console.warn("Could not write directly to user_roles table; role is preserved in user_metadata.");
                 }
-            } catch {
-                setError("Network error assigning role.");
-                return;
+            } catch (err) {
+                console.warn("Network notice during role sync (role preserved in user_metadata):", err);
             }
         }
 
-        setSuccess("Account created! Redirecting to login...");
+        setSuccess("Account created successfully! Redirecting to login...");
         setTimeout(() => {
             router.push("/login");
         }, 1500);
