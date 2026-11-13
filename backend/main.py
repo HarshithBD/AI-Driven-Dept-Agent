@@ -10,7 +10,7 @@ else:
     load_dotenv()
 
 # ==================== IMPORTS ====================
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -146,8 +146,9 @@ def root():
     }
 
 @app.get("/department/config")
-def get_config():
+def get_config(response: Response):
     """Return department metadata, subjects, sections, and laboratories."""
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=600"
     return get_department_metadata()
 
 # ==================== CURRENT USER ====================
@@ -380,14 +381,16 @@ def _read_timetable_csv(path: Path) -> list[dict[str, str]]:
         raise HTTPException(status_code=500, detail=f"Failed to read schedule CSV: {exc}") from exc
 
 @app.get("/deadlines")
-def get_student_deadlines(user=Depends(get_current_user)):
+def get_student_deadlines(response: Response, user=Depends(get_current_user)):
     """Return read-only deadline data for authenticated department users."""
+    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=120"
     rows = _read_timetable_csv(TIMETABLE_DATA_DIR / "deadlines.csv")
     return sorted(rows, key=lambda row: row.get("due_date", ""))
 
 @app.get("/timetable")
-def get_student_timetable(group: str = "AIML-A", user=Depends(get_current_user)):
+def get_student_timetable(response: Response, group: str = "AIML-A", user=Depends(get_current_user)):
     """Return the requested section timetable to authenticated department users."""
+    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=120"
     group_name = group.strip().upper().replace(" ", "-")
     if not re.fullmatch(r"[A-Z0-9-]+", group_name):
         raise HTTPException(status_code=400, detail="Invalid timetable section")
@@ -848,8 +851,9 @@ class FacultyUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 @app.get("/faculty")
-def list_faculty(department: str = DEPARTMENT_CODE):
+def list_faculty(response: Response, department: str = DEPARTMENT_CODE):
     """Retrieve faculty directory for the department."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
     return db_service.get_faculty_list(department=department)
 
 @app.post("/faculty")
@@ -964,8 +968,9 @@ class SubjectUpdateRequest(BaseModel):
     description: Optional[str] = None
 
 @app.get("/subjects")
-def list_subjects(department: str = DEPARTMENT_CODE):
+def list_subjects(response: Response, department: str = DEPARTMENT_CODE):
     """Retrieve catalog of academic subjects for the department."""
+    response.headers["Cache-Control"] = "public, max-age=60, stale-while-revalidate=120"
     return db_service.get_subjects_list(department=department)
 
 @app.post("/subjects")

@@ -85,9 +85,43 @@ export default function ChatInterface({
         if (!input.trim()) return;
 
         const userMessage: Message = { role: "user", content: input };
+        const queryText = input.trim();
         setMessages((prev) => [...prev, userMessage]);
         setInput("");
         setIsLoading(true);
+
+        // Check browser client cache for instant responses (0ms round-trip)
+        try {
+            const cacheKey = `aida_q_${queryText.toLowerCase()}`;
+            const cached = typeof window !== "undefined" ? sessionStorage.getItem(cacheKey) : null;
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                // Valid for 5 minutes
+                if (Date.now() - parsed.timestamp < 5 * 60 * 1000 && parsed.response) {
+                    const cachedAssistant: Message = {
+                        role: "assistant",
+                        content: "",
+                        traces: [...(parsed.traces || []), "⚡ Served instantly from browser cache"]
+                    };
+                    setMessages((prev) => [...prev, cachedAssistant]);
+                    isStreaming.current = true;
+                    for (let i = 0; i <= parsed.response.length; i++) {
+                        cachedAssistant.content = parsed.response.slice(0, i);
+                        setMessages((prev) => {
+                            const updated = [...prev];
+                            updated[updated.length - 1] = { ...cachedAssistant };
+                            return updated;
+                        });
+                        await new Promise(r => setTimeout(r, 4));
+                    }
+                    isStreaming.current = false;
+                    setIsLoading(false);
+                    return;
+                }
+            }
+        } catch {
+            // Fall through to live network fetch
+        }
 
         try {
             const history = messages.map(m => ({ role: m.role, content: m.content }));
@@ -143,6 +177,16 @@ export default function ChatInterface({
                                 });
                             } else if (event.type === "result") {
                                 const fullText = event.response;
+                                // Save into browser client cache for instant repeated replies
+                                try {
+                                    sessionStorage.setItem(`aida_q_${queryText.toLowerCase()}`, JSON.stringify({
+                                        response: fullText,
+                                        traces: assistantMessage.traces || [],
+                                        timestamp: Date.now()
+                                    }));
+                                } catch {
+                                    // ignore storage quota
+                                }
                                 for (let i = 0; i <= fullText.length; i++) {
                                     assistantMessage.content = fullText.slice(0, i);
                                     setMessages((prev) => {

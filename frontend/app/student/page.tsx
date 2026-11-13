@@ -51,6 +51,14 @@ export default function StudentDashboard() {
                     const data = await res.json();
                     setIsAuthorized(true);
                     setUserEmail(data.email || "");
+
+                    const profileRes = await apiFetch("/students/me");
+                    if (profileRes.ok) {
+                        const profile = await profileRes.json();
+                        if (profile.section === "AIML-A" || profile.section === "AIML-B") {
+                            setSelectedSection(profile.section);
+                        }
+                    }
                 } else {
                     router.push("/login");
                 }
@@ -76,11 +84,15 @@ export default function StudentDashboard() {
                     setMyRequests(await reqRes.json());
                 }
 
+                const timetableRes = await apiFetch(`/timetable?group=${encodeURIComponent(selectedSection)}`);
+                if (timetableRes.ok) {
+                    setTimetableRows(await timetableRes.json());
+                }
+
                 // Fetch deadlines
-                const dRes = await apiFetch("/admin/deadlines");
+                const dRes = await apiFetch("/deadlines");
                 if (dRes.ok) {
-                    const dData = await dRes.json();
-                    setDeadlines(dData.rows || []);
+                    setDeadlines(await dRes.json());
                 }
 
                 // Fetch notices
@@ -108,7 +120,7 @@ export default function StudentDashboard() {
         };
 
         loadData();
-    }, [isAuthorized]);
+    }, [isAuthorized, selectedSection]);
 
     // Handle Submit Request
     const handleSubmitRequest = async (e: React.FormEvent) => {
@@ -254,6 +266,7 @@ export default function StudentDashboard() {
                 <div className="flex border-b border-white/10 gap-2 overflow-x-auto">
                     {[
                         { id: "requests", label: "My Requests & Approvals" },
+                        { id: "timetable", label: "Class Timetable" },
                         { id: "deadlines", label: "Assignments & Deadlines" },
                         { id: "notices", label: "Notices & Events" },
                         { id: "faculty", label: "Faculty Directory & Hours" }
@@ -478,11 +491,68 @@ export default function StudentDashboard() {
                     </div>
                 )}
 
+                {/* TAB: CLASS TIMETABLE */}
+                {activeTab === "timetable" && (
+                    <div className="space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <h2 className="text-lg font-bold text-foreground">Class Timetable</h2>
+                                <p className="text-xs text-muted-foreground">Schedule loaded from the department timetable CSV.</p>
+                            </div>
+                            <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                                Section
+                                <select
+                                    value={selectedSection}
+                                    onChange={e => setSelectedSection(e.target.value as "AIML-A" | "AIML-B")}
+                                    className="px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-foreground"
+                                >
+                                    <option value="AIML-A">AIML-A</option>
+                                    <option value="AIML-B">AIML-B</option>
+                                </select>
+                            </label>
+                        </div>
+                        {isReqLoading ? (
+                            <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
+                                Loading timetable...
+                            </div>
+                        ) : timetableRows.length === 0 ? (
+                            <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
+                                No timetable has been uploaded for {selectedSection}.
+                            </div>
+                        ) : (
+                            <div className="glass-panel rounded-2xl border border-white/10 overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-white/5 text-muted-foreground uppercase">
+                                        <tr>
+                                            {["day", "time", "course_id", "course_name", "faculty", "room"].map(header => (
+                                                <th key={header} className="px-4 py-3">{header.replace("_", " ")}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {timetableRows.map((row, index) => (
+                                            <tr key={`${row.day}-${row.time}-${row.course_id}-${index}`}>
+                                                {["day", "time", "course_id", "course_name", "faculty", "room"].map(key => (
+                                                    <td key={key} className="px-4 py-3 text-foreground">{row[key] || "—"}</td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* TAB 2: DEADLINES */}
                 {activeTab === "deadlines" && (
                     <div className="space-y-4">
                         <h2 className="text-lg font-bold text-foreground">Upcoming Deadlines & Submissions</h2>
-                        {deadlines.length === 0 ? (
+                        {isReqLoading ? (
+                            <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
+                                Loading deadlines...
+                            </div>
+                        ) : deadlines.length === 0 ? (
                             <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
                                 No upcoming deadlines found.
                             </div>
@@ -598,4 +668,3 @@ export default function StudentDashboard() {
         </div>
     );
 }
-

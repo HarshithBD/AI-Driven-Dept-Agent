@@ -17,6 +17,7 @@ async def no_lifespan(app):
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "TIMETABLE_DATA_DIR", tmp_path)
+    monkeypatch.setattr(main, "load_index", lambda: None)
     monkeypatch.setattr(main.app.router, "lifespan_context", no_lifespan)
     main.app.dependency_overrides[main.get_current_user] = lambda: {
         "id": "test-student",

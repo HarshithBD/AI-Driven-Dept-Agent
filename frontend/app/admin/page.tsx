@@ -742,6 +742,49 @@ export default function AdminDashboard() {
         }
     };
 
+    const handleUploadDeadlines = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!deadlineFile) return;
+
+        setIsDeadlineUploading(true);
+        setDeadlineStatus("Uploading deadlines CSV...");
+        const formData = new FormData();
+        formData.append("file", deadlineFile);
+
+        try {
+            const res = await apiFetch("/upload-deadlines", { method: "POST", body: formData });
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.detail || "Deadline upload failed.");
+            }
+            setDeadlineFile(null);
+            await fetchDeadlines();
+            setDeadlineStatus("Deadlines uploaded successfully.");
+        } catch (err) {
+            console.error("Deadline upload error:", err);
+            setDeadlineStatus(err instanceof Error ? err.message : "Error uploading deadlines.");
+        } finally {
+            setIsDeadlineUploading(false);
+        }
+    };
+
+    const handleDeleteDeadlines = async () => {
+        if (!confirm("Delete the current department deadlines CSV?")) return;
+        setDeadlineStatus("");
+        try {
+            const res = await apiFetch("/admin/deadlines", { method: "DELETE" });
+            if (!res.ok) {
+                const data = await res.json().catch(() => null);
+                throw new Error(data?.detail || "Failed to delete deadlines.");
+            }
+            await fetchDeadlines();
+            setDeadlineStatus("Deadlines deleted successfully.");
+        } catch (err) {
+            console.error("Deadline delete error:", err);
+            setDeadlineStatus(err instanceof Error ? err.message : "Error deleting deadlines.");
+        }
+    };
+
     const handleDeleteTimetable = async (filename: string) => {
         if (!confirm(`Delete timetable payload "${filename}"?`)) return;
         try {
@@ -1294,6 +1337,7 @@ export default function AdminDashboard() {
                     TAB: TIMETABLES & SCHEDULE SYNC
                    ========================================================================= */}
                 {activeTab === "timetable" && (
+                    <div className="space-y-6">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {/* Timetable Upload Form */}
                         <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-4 h-fit">
@@ -1397,6 +1441,84 @@ export default function AdminDashboard() {
                                 </div>
                             )}
                         </div>
+                    </div>
+                        <section className="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-4 h-fit">
+                                <h2 className="text-base font-bold text-foreground">Upload Assignment Deadlines</h2>
+                                <p className="text-xs text-muted-foreground">
+                                    Upload a CSV with course_id, course_name, title, type, due_date, and description columns.
+                                </p>
+                                {deadlineStatus && (
+                                    <div role="status" className="p-3 text-xs text-primary bg-primary/10 rounded-lg border border-primary/20">
+                                        {deadlineStatus}
+                                    </div>
+                                )}
+                                <form onSubmit={handleUploadDeadlines} className="space-y-4">
+                                    <input
+                                        type="file"
+                                        accept=".csv,text/csv"
+                                        required
+                                        onChange={e => setDeadlineFile(e.target.files?.[0] || null)}
+                                        className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs text-foreground file:mr-3 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-primary/20 file:text-primary cursor-pointer"
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={isDeadlineUploading || !deadlineFile}
+                                        className="w-full py-2.5 rounded-xl text-xs font-bold bg-primary text-black hover:opacity-90 transition-opacity disabled:opacity-40 cursor-pointer"
+                                    >
+                                        {isDeadlineUploading ? "Uploading..." : "Upload Deadlines CSV"}
+                                    </button>
+                                </form>
+                            </div>
+
+                            <div className="lg:col-span-2 space-y-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h2 className="text-base font-bold text-foreground">Current Deadlines</h2>
+                                    {deadlineExists && (
+                                        <button
+                                            onClick={handleDeleteDeadlines}
+                                            className="text-xs text-red-400 hover:underline font-semibold cursor-pointer"
+                                        >
+                                            Delete CSV
+                                        </button>
+                                    )}
+                                </div>
+                                {isDeadlineLoading ? (
+                                    <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
+                                        Loading deadlines...
+                                    </div>
+                                ) : !deadlineExists ? (
+                                    <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
+                                        No deadlines CSV has been uploaded.
+                                    </div>
+                                ) : deadlineRows.length === 0 ? (
+                                    <div className="glass-panel p-8 rounded-2xl text-center text-sm text-muted-foreground border border-white/10">
+                                        The deadlines CSV is empty or has no rows.
+                                    </div>
+                                ) : (
+                                    <div className="glass-panel rounded-2xl border border-white/10 overflow-x-auto">
+                                        <table className="w-full text-left text-xs">
+                                            <thead className="bg-white/5 text-muted-foreground uppercase">
+                                                <tr>
+                                                    {deadlineHeaders.map(header => (
+                                                        <th key={header} className="px-3 py-3 whitespace-nowrap">{header.replaceAll("_", " ")}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-white/5">
+                                                {deadlineRows.map((row, index) => (
+                                                    <tr key={`${row.course_id}-${row.title}-${index}`}>
+                                                        {deadlineHeaders.map(header => (
+                                                            <td key={header} className="px-3 py-3 text-foreground min-w-32">{row[header] || "—"}</td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
                     </div>
                 )}
 

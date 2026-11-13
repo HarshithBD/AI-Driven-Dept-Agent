@@ -5,6 +5,9 @@ Ties together parsing, chunking, embedding, and vector store
 into two main operations: ingest and search.
 """
 
+import hashlib
+import json
+import time
 from typing import Optional, List, Dict, Any
 from langchain_core.documents import Document
 from . import parser, chunker, embeddings, vectorstore
@@ -13,6 +16,16 @@ from . import parser, chunker, embeddings, vectorstore
 # Module-level index cache (loaded once, reused for all searches)
 _index = None
 _bm25 = None
+
+# In-memory query cache for instant responses (0ms RAG retrieval latency)
+_SEARCH_CACHE: Dict[str, Dict[str, Any]] = {}
+_CACHE_MAX_SIZE = 256
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+
+def _get_cache_key(query: str, top_k: int, filter: Optional[dict]) -> str:
+    raw = f"{query.strip().lower()}:{top_k}:{json.dumps(filter or {}, sort_keys=True)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def ingest_documents(docs_dir: str, tags_map: Optional[dict] = None) -> int:
@@ -50,6 +63,7 @@ def ingest_documents(docs_dir: str, tags_map: Optional[dict] = None) -> int:
         embedding_model = None
 
     vectorstore.create_index(chunks, embedding_model)
+    _SEARCH_CACHE.clear()
 
     print("\n" + "=" * 60)
     print(f"Ingestion complete! {len(pages)} pages -> {len(chunks)} chunks indexed.")
@@ -78,10 +92,26 @@ def load_index() -> None:
 def search_documents(query: str, top_k: int = 5, filter: Optional[dict] = None) -> List[Document]:
     """
     Search the loaded indices for relevant chunks with optional filtering.
+    Uses an in-memory cache for instant responses on repeated queries.
     Falls back to lazy initialization if load_index() wasn't called yet.
     """
-    global _index, _bm25
+    global _index, _bm25, _SEARCH_CACHE
+
+    cache_key = _get_cache_key(query, top_k, filter)
+    now = time.time()
+    if cache_key in _SEARCH_CACHE:
+        entry = _SEARCH_CACHE[cache_key]
+        if now - entry["timestamp"] < _CACHE_TTL_SECONDS:
+            return entry["results"]
+
     if _index is None and _bm25 is None:
         load_index()
 
-    return vectorstore.search(_index, query, top_k, filter=filter, bm25_retriever=_bm25)
+    results = vectorstore.search(_index, query, top_k, filter=filter, bm25_retriever=_bm25)
+
+    if len(_SEARCH_CACHE) >= _CACHE_MAX_SIZE:
+        oldest_key = min(_SEARCH_CACHE.keys(), key=lambda k: _SEARCH_CACHE[k]["timestamp"])
+        _SEARCH_CACHE.pop(oldest_key, None)
+
+    _SEARCH_CACHE[cache_key] = {"results": results, "timestamp": now}
+    return results

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api-client";
 import { DepartmentEvent } from "../../lib/department-db-types";
@@ -9,8 +8,6 @@ import { DepartmentEvent } from "../../lib/department-db-types";
 type EventFilter = "all" | "upcoming" | "workshops" | "seminars" | "hackathons";
 
 export default function EventsPage() {
-    const router = useRouter();
-
     // User & Permissions State
     const [userRole, setUserRole] = useState<{
         isAuthenticated: boolean;
@@ -180,9 +177,9 @@ export default function EventsPage() {
             setIsCreateModalOpen(false);
             setEditingEvent(null);
             fetchEvents();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Save event error:", err);
-            setErrorMsg(err.message || "Failed to save event. Check authorization.");
+            setErrorMsg(err instanceof Error ? err.message : "Failed to save event. Check authorization.");
         } finally {
             setIsSaving(false);
         }
@@ -209,9 +206,9 @@ export default function EventsPage() {
                 setSelectedEvent(null);
             }
             fetchEvents();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Delete event error:", err);
-            setErrorMsg(err.message || "Failed to delete event. Check authorization.");
+            setErrorMsg(err instanceof Error ? err.message : "Failed to delete event. Check authorization.");
         }
     };
 
@@ -717,4 +714,3 @@ export default function EventsPage() {
         </div>
     );
 }
-
